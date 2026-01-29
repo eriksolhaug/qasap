@@ -1,5 +1,5 @@
 # QASAP — Quick Analysis of Spectra and Profiles Package
-## Version 0.7
+## Version 0.8
 
 Interactive Python tool for comprehensive 1D spectral analysis with intelligent file format detection. QASAP provides both quick-look functionality and advanced analysis features including multi-component line fitting, continuum modeling, and Bayesian MCMC fitting.
 
@@ -95,7 +95,7 @@ qasap_v0.5/                # v0.5 stable release
   ├── qasap_v0.5.py
   ├── README.md
   └── data files
-qasap.py                   # Main entry point (v0.6)
+qasap.py                   # Main entry point (v0.8)
 ```
 
 ## Data Files
@@ -199,8 +199,9 @@ Centralized feature management panel accessed with `*` key:
 
 ## Versions
 
-- **v0.7** (current): Refactored with intelligent format auto-detection, modular architecture
-- **v0.5** (stable): Available in `qasap_v0.5/` with full Voigt/Gaussian fitting, MCMC, velocity mode
+- **v0.8** (current): ItemTracker for feature management, auto-fit registration, redshift mode improvements
+- **v0.7** (stable): Available as tagged release on GitHub. Refactored with intelligent format auto-detection, modular architecture, listfit mode, and comprehensive UI
+- **v0.5** (legacy): Available in `qasap_v0.5/` directory with full Voigt/Gaussian fitting, MCMC, velocity mode
 
 ## Citation
 

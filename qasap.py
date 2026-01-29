@@ -25,7 +25,7 @@ def main():
     """Main entry point for QASAP"""
     
     parser = argparse.ArgumentParser(
-        description='QASAP v0.7 - Spectrum Analysis Package',
+        description='QASAP v0.8 - Spectrum Analysis Package',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -63,7 +63,7 @@ Examples:
                         help='Line Spread Function: FWHM in km/s or path to LSF file')
     
     parser.add_argument('--version', action='version',
-                        version='QASAP v0.7')
+                        version='QASAP v0.8')
     
     args = parser.parse_args()
     
