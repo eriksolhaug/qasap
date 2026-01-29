@@ -7,9 +7,10 @@ Interactive Python tool for comprehensive 1D spectral analysis with intelligent 
 
 - **Intelligent Format Auto-Detection**: Automatically detects 7+ ASCII and FITS spectrum formats with confidence scoring
 - **Interactive Plotting**: Real-time spectrum visualization with zoom, pan, and smooth controls
-- **Profile Fitting**: Gaussian and Voigt profile fitting (single and multi-component)
+- **Multi-Component Fitting**: Gaussian and Voigt profile fitting (single and multi-component) with Listfit mode for simultaneous fitting
 - **Line Analysis**: Equivalent width, redshift estimation, velocity mode analysis
 - **Advanced Fitting**: Bayesian MCMC with posterior distributions (work in progress still - works well for single profiles)
+- **Item Tracker**: Centralized management of all plotted components (Gaussians, Voigts, polynomials, continuum) with multi-select and deletion capabilities
 - **Utilities**: LSF convolution, line identification, filter overlays
 
 ## Installation
@@ -199,8 +200,8 @@ Centralized feature management panel accessed with `*` key:
 
 ## Versions
 
-- **v0.8** (current): ItemTracker for feature management, auto-fit registration, redshift mode improvements
-- **v0.7** (stable): Available as tagged release on GitHub. Refactored with intelligent format auto-detection, modular architecture, listfit mode, and comprehensive UI
+- **v0.8** (current): Listfit mode for simultaneous multi-component fitting, ItemTracker for centralized feature management with multi-select and deletion, auto-fit registration, redshift mode improvements
+- **v0.7** (stable): Available as tagged release on GitHub. Refactored with intelligent format auto-detection, modular architecture, and comprehensive UI
 - **v0.5** (legacy): Available in `qasap_v0.5/` directory with full Voigt/Gaussian fitting, MCMC, velocity mode
 
 ## Citation
