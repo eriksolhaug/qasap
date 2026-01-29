@@ -64,12 +64,12 @@ def get_available_line_lists(resources_dir: str) -> List[LineList]:
     Get all available line lists from the resources directory.
     
     Args:
-        resources_dir: Path to the resources/linelist directory
+        resources_dir: Path to the resources directory (contains linelist/ subdirectory)
         
     Returns:
         List of LineList objects sorted with SDSS lists first
     """
-    resource_path = Path(resources_dir)
+    resource_path = Path(resources_dir) / "linelist"
     sdss_lists = []
     other_lists = []
     
