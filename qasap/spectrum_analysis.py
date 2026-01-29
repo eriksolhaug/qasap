@@ -241,3 +241,86 @@ class SpectrumAnalysis:
         y_smooth = np.convolve(y, kernel, mode='same')
         
         return y_smooth
+    
+    # ===== LSF (Line Spread Function) Handling =====
+    
+    @staticmethod
+    def parse_lsf_spec(lsf_spec: str) -> float:
+        """
+        Parse LSF specification string.
+        
+        Parameters
+        ----------
+        lsf_spec : str
+            LSF specification. Can be:
+            - "10" (FWHM in km/s)
+            - "10.5" (float FWHM in km/s)
+            - "path/to/lsf_file.txt" (path to LSF data)
+            
+        Returns
+        -------
+        fwhm_kms : float
+            FWHM in km/s
+        """
+        try:
+            # Try to parse as float (km/s)
+            return float(lsf_spec)
+        except ValueError:
+            # Try to read from file
+            try:
+                data = np.loadtxt(lsf_spec)
+                # Assume first column is FWHM or entire array is FWHM values
+                return float(np.mean(data)) if data.ndim > 0 else float(data)
+            except Exception as e:
+                raise ValueError(f"Could not parse LSF spec '{lsf_spec}': {e}")
+    
+    @staticmethod
+    def apply_lsf(wav, spec, lsf_fwhm_kms: float) -> np.ndarray:
+        """
+        Apply Line Spread Function (LSF) convolution to spectrum.
+        
+        Parameters
+        ----------
+        wav : np.ndarray
+            Wavelength array (Angstroms)
+        spec : np.ndarray
+            Flux array
+        lsf_fwhm_kms : float
+            LSF FWHM in km/s
+            
+        Returns
+        -------
+        spec_lsf : np.ndarray
+            LSF-convolved spectrum
+        """
+        from scipy.constants import c as speed_of_light
+        
+        # Convert LSF from km/s to wavelength units
+        c_ang_s = speed_of_light * 1e10  # Angstroms/s
+        fwhm_ang = lsf_fwhm_kms * 1e3 * wav / c_ang_s  # Gaussian FWHM per wavelength
+        
+        # Average FWHM
+        avg_fwhm = np.mean(fwhm_ang)
+        
+        # Get wavelength spacing
+        dw = np.median(np.diff(wav))
+        
+        # Convert FWHM to sigma
+        sigma_pix = (avg_fwhm / dw) / (2 * np.sqrt(2 * np.log(2)))
+        
+        if sigma_pix < 1:
+            return spec  # No smoothing needed
+        
+        # Gaussian kernel
+        kernel_size = int(4 * sigma_pix) + 1
+        if kernel_size % 2 == 0:
+            kernel_size += 1
+        
+        x = np.arange(-kernel_size // 2, kernel_size // 2 + 1)
+        kernel = np.exp(-0.5 * (x / sigma_pix) ** 2)
+        kernel /= np.sum(kernel)
+        
+        # Convolve
+        spec_lsf = np.convolve(spec, kernel, mode='same')
+        
+        return spec_lsf

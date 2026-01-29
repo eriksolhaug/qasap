@@ -1,33 +1,16 @@
 """
-UI Components module - PyQt5 GUI components
-This is a placeholder that imports from the original qasap_v0.5 for now.
-Future work: refactor the GUI components into logical pieces.
+UI Components module - imports and re-exports all UI classes
+
+This module provides clean imports for the PyQt5-based GUI components:
+- SpectrumPlotter: Main interactive spectrum plotting widget
+- SpectrumPlotterApp: Application wrapper
+- LineListWindow: Line list dialog window
+
+All actual implementations are in separate modules for code organization.
 """
 
-import sys
-from PyQt5 import QtWidgets
-
-# Import the original classes from qasap_v0.5
-# This allows gradual refactoring while maintaining functionality
-try:
-    from qasap_v0.5.qasap_v0.5 import SpectrumPlotter, SpectrumPlotterApp, LineListWindow
-except ImportError:
-    # Fallback if direct import fails
-    print("Warning: Could not import UI components from qasap_v0.5")
-    # Define placeholder classes
-    class SpectrumPlotter(QtWidgets.QWidget):
-        def __init__(self, *args, **kwargs):
-            super().__init__()
-            print("SpectrumPlotter placeholder - import qasap_v0.5 for full functionality")
-    
-    class SpectrumPlotterApp(QtWidgets.QWidget):
-        def __init__(self, *args, **kwargs):
-            super().__init__()
-            print("SpectrumPlotterApp placeholder - import qasap_v0.5 for full functionality")
-    
-    class LineListWindow(QtWidgets.QWidget):
-        def __init__(self, *args, **kwargs):
-            super().__init__()
-            print("LineListWindow placeholder - import qasap_v0.5 for full functionality")
+from .spectrum_plotter import SpectrumPlotter
+from .spectrum_plotter_app import SpectrumPlotterApp
+from .linelist_window import LineListWindow
 
 __all__ = ['SpectrumPlotter', 'SpectrumPlotterApp', 'LineListWindow']

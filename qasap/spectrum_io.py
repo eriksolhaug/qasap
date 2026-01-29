@@ -487,3 +487,103 @@ class SpectrumIO:
         except Exception as e:
             print(f"Error reading instrument bands: {e}")
             return [], []
+    
+    # ===== ALFOSC 2D → 1D Extraction =====
+    
+    @staticmethod
+    def extract_1d_from_2d_alfosc(
+        fits_file: str, 
+        bin_width: int = 10,
+        left_bound: Optional[int] = None,
+        right_bound: Optional[int] = None,
+        output_file: Optional[str] = None
+    ) -> Tuple[np.ndarray, np.ndarray, str]:
+        """
+        Extract 1D spectrum from 2D ALFOSC spectroscopic data.
+        
+        Parameters:
+        -----------
+        fits_file : str
+            Path to 2D FITS file
+        bin_width : int
+            Bin width in pixels for wavelength binning (default: 10)
+        left_bound : int, optional
+            Left x-pixel bound for extraction
+        right_bound : int, optional
+            Right x-pixel bound for extraction
+        output_file : str, optional
+            If provided, save extracted spectrum to this file
+            
+        Returns:
+        --------
+        wavelength : np.ndarray
+            1D wavelength array
+        flux : np.ndarray
+            1D flux array (spatially summed)
+        output_path : str
+            Path where spectrum was saved (or empty string if not saved)
+        """
+        try:
+            with fits.open(fits_file) as hdul:
+                # Get primary HDU data
+                data_2d = hdul[0].data
+                header = hdul[0].header
+                
+                if data_2d is None:
+                    raise ValueError("No data in primary HDU")
+                
+                # Get wavelength calibration from header
+                naxis1 = header.get('NAXIS1', data_2d.shape[1])
+                crpix1 = header.get('CRPIX1', 1)
+                crval1 = header.get('CRVAL1', 0)
+                cdelt1 = header.get('CDELT1', 1)
+                
+                # Create wavelength array
+                wav = crval1 + (np.arange(naxis1) - crpix1 + 1) * cdelt1
+                
+                # Apply bounds
+                if left_bound is not None or right_bound is not None:
+                    left = left_bound or 0
+                    right = right_bound or naxis1
+                    data_2d = data_2d[:, left:right]
+                    wav = wav[left:right]
+                
+                # Sum spatially and bin
+                flux_1d = np.sum(data_2d, axis=0)
+                
+                if bin_width > 1:
+                    # Rebin wavelength and flux
+                    n_bins = len(wav) // bin_width
+                    wav_binned = np.zeros(n_bins)
+                    flux_binned = np.zeros(n_bins)
+                    
+                    for i in range(n_bins):
+                        start = i * bin_width
+                        end = (i + 1) * bin_width
+                        wav_binned[i] = np.mean(wav[start:end])
+                        flux_binned[i] = np.mean(flux_1d[start:end])
+                    
+                    wav, flux_1d = wav_binned, flux_binned
+                
+                # Save to file if requested
+                output_path = ""
+                if output_file:
+                    # Create FITS file
+                    hdu = fits.PrimaryHDU()
+                    hdu.data = flux_1d
+                    hdu.header['CTYPE1'] = 'WAVE'
+                    hdu.header['CRPIX1'] = 1
+                    hdu.header['CRVAL1'] = wav[0]
+                    hdu.header['CDELT1'] = wav[1] - wav[0] if len(wav) > 1 else 1
+                    hdu.header['CUNIT1'] = 'Angstrom'
+                    hdu.header['EXTRACTED_FROM'] = fits_file
+                    hdu.header['BIN_WIDTH'] = bin_width
+                    
+                    hdu.writeto(output_file, overwrite=True)
+                    output_path = output_file
+                    print(f"Saved extracted 1D spectrum to: {output_file}")
+                
+                return wav, flux_1d, output_path
+                
+        except Exception as e:
+            raise ValueError(f"Error extracting 1D from ALFOSC 2D: {e}")

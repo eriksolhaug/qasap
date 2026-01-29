@@ -1,0 +1,3978 @@
+# qasap Spectrum Plotter --- v0.5
+"""
+Main spectrum plotter widget for interactive spectral analysis
+"""
+
+import argparse
+import os
+import sys
+import numpy as np
+import pandas as pd
+import matplotlib
+matplotlib.use('Qt5Agg')
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+from astropy.io import fits
+from scipy.optimize import curve_fit
+from scipy.special import wofz
+from scipy.interpolate import interp1d
+import lmfit
+from lmfit import Model, Parameters, conf_interval, minimize
+from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton
+from PyQt5 import QtWidgets, QtCore
+from PyQt5.QtCore import pyqtSignal, Qt
+from PyQt5.QtGui import QDoubleValidator
+from PyQt5.QtWidgets import QFileDialog
+from datetime import datetime
+import ast
+import re
+
+class SpectrumPlotter(QtWidgets.QWidget):
+    def __init__(self, fits_file, redshift=0.0, zoom_factor=0.1, file_flag=0, alfosc=False, alfosc_bin=10, alfosc_left=0, alfosc_right=0, alfosc_output="", lsf="10",):
+        super().__init__()
+
+        self.fits_file = fits_file
+        self.redshift = redshift
+        self.zoom_factor = zoom_factor
+        self.file_flag = file_flag
+        self.lsf = lsf
+        self.lsf_kernel_x = None
+        self.lsf_kernel_y = None
+        self.alfosc = alfosc
+        print("alfosc:",self.alfosc)#DEBUG
+        self.alfosc_bin = alfosc_bin
+        print("alfosc_bin:",self.alfosc_bin)#DEBUG
+        self.alfosc_left = alfosc_left
+        self.alfosc_right = alfosc_right
+        self.alfosc_output = alfosc_output
+
+        # Process LSF
+        self.process_lsf(lsf)
+
+        # Initialize the control panel
+        self.init_controlpanel()
+
+        self.wav = []
+        self.spec = []
+        self.err = []
+        self.spec_line = []
+        self.err_line = []
+        self.spec_step = []
+        self.err_step = []
+        self.x_data = []
+        self.original_spec = []
+
+        self.gaussian_mode = False
+        self.multi_gaussian_mode = False
+        self.multi_gaussian_mode_old = False # Placeholder for previous multi Gaussian fit functionality
+        self.bounds = []
+        self.bound_lines = []
+        self.gaussian_line = None
+        self.gaussian_fits = []  # Stores each Gaussian's line, x-bounds, and parameters
+
+        self.continuum_mode = False
+        self.continuum_regions = []  # Stores regions for continuum fitting
+        self.continuum_patches = []
+        self.continuum_fits = []
+        self.continuum_params = []
+
+        self.redshift_estimation_mode = False
+        self.rest_wavelength = None  # Set to `None` if no initial rest wavelength
+        self.rest_id = None
+
+        self.x_upper_bound = None
+        self.x_lower_bound = None
+        self.y_upper_bound = None
+        self.y_lower_bound = None
+        self.original_xlim = None
+        self.original_ylim = None
+
+        self.is_step_plot = False
+        self.spectrum_line = None
+        self.error_line = None
+        self.is_residual_shown = False # Residual panel is initially hidden
+        self.linelist_plots = []
+        self.is_velocity_mode = False
+        self.velocities = []
+        self.residual_line = None
+
+        self.residual_ax = None  # Placeholder for the residual axis
+        self.residuals = []
+
+        self.line_ids = []
+        self.line_wavelengths = []
+        self.band_ranges = []
+        self.current_gaussian_plot = None
+        self.current_voigt_plot = None
+
+        self.ew_fill = None
+
+        self.comp_x = []
+        self.comp_xs = []
+        self.continuum_subtracted_y = []
+        self.continuum_subtracted_ys = []
+
+        self.voigt_mode = False
+        self.voigt_fits = []
+        self.voigt_comps = []
+        self.gaussian_comps = []
+        self.multi_voigt_mode = False
+        self.fit_id = 0
+        self.component_id = 0
+
+        self.markers = []
+        self.labels = []
+        self.selected_gaussian = None
+        self.selected_voigt = None
+
+        self.selected_line_id = None
+        self.selected_line_wavelength = None
+
+        self.show_total_line = False
+
+        self.show_filters = False
+        self.filter_lines = []
+
+        self.osc_ids = []
+        self.osc_wavelengths = []
+        self.osc_strengths = []
+
+        self.show_bands = False
+        self.band_areas = []
+        self.band_labels = []
+
+        # MCMC
+        self.bayes_bounds = []
+        self.bayes_mode = False
+        self.bayes_bound_lines = []
+        self.mask_bounds = []
+        self.mask_bound_lines = []
+        self.mask_mode = False
+        self.mask_patches = []
+
+    
+    def init_controlpanel(self):
+        # Set main window title and geometry
+        self.setWindowTitle("QASAP Control Panel")
+        self.setGeometry(100, 100, 440, 200)
+
+        # Create redshift input field
+        self.label_redshift = QLabel("Redshift:", self)
+        self.label_redshift.move(20, 30)
+        self.input_redshift = QLineEdit(self)
+        self.input_redshift.move(105, 25)
+        self.input_redshift.resize(100, 30)
+        self.input_redshift.setText(str(self.redshift))  # Set initial redshift value
+
+        # Create fine-tuning buttons for the redshift
+        self.button_redshift_decrease_01 = QPushButton("↓ 0.1", self)
+        self.button_redshift_decrease_01.move(210, 40)
+        self.button_redshift_decrease_01.clicked.connect(lambda: self.adjust_redshift(-0.1))
+
+        self.button_redshift_decrease_001 = QPushButton("↓ 0.01", self)
+        self.button_redshift_decrease_001.move(275, 40)
+        self.button_redshift_decrease_001.clicked.connect(lambda: self.adjust_redshift(-0.01))
+
+        self.button_redshift_decrease_0001 = QPushButton("↓ 0.001", self)
+        self.button_redshift_decrease_0001.move(345, 40)
+        self.button_redshift_decrease_0001.clicked.connect(lambda: self.adjust_redshift(-0.001))
+
+        self.button_redshift_increase_01 = QPushButton("↑ 0.1", self)
+        self.button_redshift_increase_01.move(210, 10)
+        self.button_redshift_increase_01.clicked.connect(lambda: self.adjust_redshift(0.1))
+
+        self.button_redshift_increase_001 = QPushButton("↑ 0.01", self)
+        self.button_redshift_increase_001.move(275, 10)
+        self.button_redshift_increase_001.clicked.connect(lambda: self.adjust_redshift(0.01))
+
+        self.button_redshift_increase_0001 = QPushButton("↑ 0.001", self)
+        self.button_redshift_increase_0001.move(345, 10)
+        self.button_redshift_increase_0001.clicked.connect(lambda: self.adjust_redshift(0.001))
+
+        # Create zoom factor input field
+        self.label_zoom = QLabel("Zoom Factor:", self)
+        self.label_zoom.move(20, 80)
+        self.input_zoom = QLineEdit(self)
+        self.input_zoom.move(105, 75)
+        self.input_zoom.resize(100, 30)
+        self.input_zoom.setText(str(self.zoom_factor))  # Set initial zoom factor
+        zoom_validator = QDoubleValidator(0.001, 0.4, 3, self)  # (min, max, decimals)
+        self.input_zoom.setValidator(zoom_validator)
+
+        # Connect pressing "Enter" in the input field to apply changes
+        self.input_redshift.returnPressed.connect(self.apply_changes)
+        self.input_zoom.returnPressed.connect(self.apply_changes)
+
+        # Create an "Apply" button
+        self.apply_button = QPushButton("Enter", self)
+        self.apply_button.move(20, 120)
+        self.apply_button.clicked.connect(self.apply_changes)
+
+        # Show the window
+        self.show()
+
+    def adjust_redshift(self, delta):
+        """Adjust redshift by a specified delta value and update the input field."""
+        self.redshift += delta
+        self.input_redshift.setText(f"{self.redshift:.6f}")  # Update input field with new redshift
+        if self.linelist_plots:
+            self.clear_linelist()
+            self.display_linelist() # Re-display linelist
+            self.fig.canvas.draw_idle()  # Redraw the figure to update the display
+
+    def apply_changes(self):
+        """Apply changes based on user input for redshift and zoom factor."""
+        try:
+            # Update redshift and zoom factor from input fields
+            self.redshift = float(self.input_redshift.text())
+            self.zoom_factor = float(self.input_zoom.text())
+            print(f"Applied Redshift: {self.redshift}, Zoom Factor: {self.zoom_factor}")
+            if self.linelist_plots:
+                self.clear_linelist()
+                self.display_linelist() # Re-display linelist
+                self.fig.canvas.draw_idle()  # Redraw the figure to update the display
+        except ValueError:
+            print("Invalid input for redshift or zoom factor. Please enter numerical values.")
+
+    def extract_1d_spectrum(self):
+        # Load FITS files
+        with fits.open(self.fits_file) as hdul:
+            spectrum_data = hdul[1].data # Spectrum in 1th (0th index) slice
+            wavelength_data = hdul[8].data # Wavelength solution in 8th (7th index) slice
+            # spectrum_data = fits.getdata(self.fits_file)
+            # wavelength_data = fits.getdata(self.alfosc_wav)
+
+        # Validate shapes
+        # if spectrum_data.shape != wavelength_data.shape:
+        #     raise ValueError("Spectrum and wavelength FITS files must have the same shape.")
+        print("spectrum_data",spectrum_data)
+        print("wavelength_data",wavelength_data)
+
+        # Check bounds
+        ny, nx = spectrum_data.shape
+        if not (0 <= self.alfosc_left < self.alfosc_right <= nx):
+            raise ValueError(f"x_left and x_right must be in range [0, {nx}]")
+
+        # Slice and average along y-axis within x-bounds
+        sub_spectrum = spectrum_data[:, self.alfosc_left:self.alfosc_right]
+        sub_wavelength = wavelength_data[:, self.alfosc_left:self.alfosc_right]
+
+        spectrum_1d = np.nanmean(sub_spectrum, axis=1)
+        wavelength_1d = np.nanmean(sub_wavelength, axis=1)
+
+        # Save to text file if requested
+        if self.alfosc_output:
+            np.savetxt(self.alfosc_output, np.column_stack([wavelength_1d, spectrum_1d]), header="wavelength flux")
+            print(f"ALFOSC 1D spectrum created: {self.alfosc_output}")
+        else:
+            print(f"ALFOSC 1D spectrum not created. Please specify the ALFOSC")
+
+    def extract_1d_spectrum_binned(self):
+        # Load FITS files
+        with fits.open(self.fits_file) as hdul:
+            spectrum_data = hdul[1].data.flatten() # Spectrum in 1th (0th index) slice
+            wavelength_data = hdul[8].data.flatten() # Wavelength solution in 8th (7th index) slice
+
+        print("spectrum_data",spectrum_data)
+        print("wavelength_data",wavelength_data)
+        
+        # Bin the data into specified wavelength bins
+        print("alfosc_bin:",self.alfosc_bin)#DEBUG
+        bin_size = self.alfosc_bin
+        print(f"Applying 1D spectrum binning of {bin_size} Angstroms")
+        # Remove wavelength indices that are zero
+        wavelength_data = np.where(wavelength_data != 0, wavelength_data, 5000)
+        spectrum_data = np.where(wavelength_data != 0, wavelength_data, 5000)
+        print("min(wavelength_data)",min(wavelength_data))
+        print("wavelength_data:",wavelength_data)
+        # print("notzero_indices:", notzero_indices)
+        # wavelength_data = wavelength_data[notzero_indices]
+        # spectrum_data = spectrum_data[notzero_indices]
+        # Sort bin
+        sorted_indices = np.argsort(wavelength_data)
+        wavelength_sorted = wavelength_data[sorted_indices]
+        flux_sorted = spectrum_data[sorted_indices]
+        print("Sorted wavelength:", wavelength_sorted)
+        binned_wavelength = []
+        binned_flux = []
+        # for i in range(0, len(wavelength_sorted), bin_size):
+        #     bin_wavelength = wavelength_sorted[i:i + bin_size]
+        #     bin_flux = flux_sorted[i:i + bin_size]
+        #     binned_wavelength.append(bin_wavelength.mean())
+        #     binned_flux.append(np.median(bin_flux))
+        binned_wavelength_left, binned_wavelength_right = np.arange(int(np.min(wavelength_sorted)), int(np.max(wavelength_sorted)), bin_size), np.arange(bin_size + int(np.min(wavelength_sorted)), bin_size + int(np.max(wavelength_sorted)), bin_size+bin_size)
+        print("binned_wavelength_left:", binned_wavelength_left)
+        print("binned_wavelength_right:", binned_wavelength_right)
+        # Take wavelength bin and find the flux pixels that have corresponding wavelength pixels that are within the wavelength bin and take the median and add that to the binned flux array.
+        for idx_bin in binned_wavelength_left: # Loop through bins to see what pixels should be included in that bin
+            temp_flux_vals = []
+            for idx, wavelength in enumerate(wavelength_sorted): # Loop through pixels to see what pixels are inside the bin
+                if (binned_wavelength_left[idx_bin] < wavelength) and (wavelength < binned_wavelength_right[idx_bin]):
+                    temp_flux_vals.append(flux_sorted[idx])
+            binned_flux.append(np.median(temp_flux_vals))
+        # Store the binned spectrum
+        wavelength_1d = np.array(binned_wavelength)
+        spectrum_1d = np.array(binned_flux)
+
+        # Save to text file if requested
+        if self.alfosc_output:
+            np.savetxt(self.alfosc_output, np.column_stack([wavelength_1d, spectrum_1d]), header="wavelength flux")
+            print(f"ALFOSC 1D spectrum created: {self.alfosc_output}")
+        else:
+            print(f"ALFOSC 1D spectrum not created. Please specify the ALFOSC")
+
+    def extract_1d_spectrum_trace(self):
+        # Load FITS files
+        with fits.open(self.fits_file) as hdul:
+            spectrum_data = hdul[1].data.flatten() # Spectrum in 1th (0th index) slice
+            wavelength_data = hdul[8].data.flatten() # Wavelength solution in 8th (7th index) slice
+
+        print("spectrum_data",spectrum_data)
+        print("wavelength_data",wavelength_data)
+        
+        # Bin the data into specified wavelength bins
+        print("alfosc_bin:",self.alfosc_bin)#DEBUG
+        bin_size = self.alfosc_bin
+        print(f"Applying 1D spectrum binning of {bin_size} Angstroms")
+        # Remove wavelength indices that are zero
+        wavelength_data = np.where(wavelength_data != 0, wavelength_data, 5000)
+        spectrum_data = np.where(wavelength_data != 0, wavelength_data, 5000)
+        print("min(wavelength_data)",min(wavelength_data))
+        print("wavelength_data:",wavelength_data)
+        # print("notzero_indices:", notzero_indices)
+        # wavelength_data = wavelength_data[notzero_indices]
+        # spectrum_data = spectrum_data[notzero_indices]
+        # Sort bin
+        sorted_indices = np.argsort(wavelength_data)
+        wavelength_sorted = wavelength_data[sorted_indices]
+        flux_sorted = spectrum_data[sorted_indices]
+        print("Sorted wavelength:", wavelength_sorted)
+        binned_wavelength = []
+        binned_flux = []
+        # for i in range(0, len(wavelength_sorted), bin_size):
+        #     bin_wavelength = wavelength_sorted[i:i + bin_size]
+        #     bin_flux = flux_sorted[i:i + bin_size]
+        #     binned_wavelength.append(bin_wavelength.mean())
+        #     binned_flux.append(np.median(bin_flux))
+        binned_wavelength_left, binned_wavelength_right = np.arange(int(np.min(wavelength_sorted)), int(np.max(wavelength_sorted)), bin_size), np.arange(bin_size + int(np.min(wavelength_sorted)), bin_size + int(np.max(wavelength_sorted)), bin_size+bin_size)
+        print("binned_wavelength_left:", binned_wavelength_left)
+        print("binned_wavelength_right:", binned_wavelength_right)
+        # Take wavelength bin and find the flux pixels that have corresponding wavelength pixels that are within the wavelength bin and take the median and add that to the binned flux array.
+        for idx_bin in binned_wavelength_left: # Loop through bins to see what pixels should be included in that bin
+            temp_flux_vals = []
+            for idx, wavelength in enumerate(wavelength_sorted): # Loop through pixels to see what pixels are inside the bin
+                if (binned_wavelength_left[idx_bin] < wavelength) and (wavelength < binned_wavelength_right[idx_bin]):
+                    temp_flux_vals.append(flux_sorted[idx])
+            binned_flux.append(np.median(temp_flux_vals))
+        # Store the binned spectrum
+        wavelength_1d = np.array(binned_wavelength)
+        spectrum_1d = np.array(binned_flux)
+
+        # Save to text file if requested
+        if self.alfosc_output:
+            np.savetxt(self.alfosc_output, np.column_stack([wavelength_1d, spectrum_1d]), header="wavelength flux")
+            print(f"ALFOSC 1D spectrum created: {self.alfosc_output}")
+        else:
+            print(f"ALFOSC 1D spectrum not created. Please specify the ALFOSC")
+
+
+    def plot_spectrum(self):
+        # Read lines and instrument bands
+        self.line_wavelengths, self.line_ids = self.read_lines()
+        self.osc_wavelengths, self.osc_ids, self.osc_strengths = self.read_osc()
+        self.read_instrument_bands()
+
+        # Find title from file name
+        title = os.path.basename(self.fits_file)
+
+        # ALFOSC functionality
+        if self.alfosc: # Make code to create and read newly created 1D ALFOSC spectrum
+            self.extract_1d_spectrum()
+            self.file_flag, self.fits_file = 3, self.alfosc_output
+            print("file_flag updated (3).")
+
+        # File handling based on flag
+        if self.file_flag == 1:
+            data = np.genfromtxt(self.fits_file, comments='#', delimiter='\t')
+            self.wav, self.spec, self.err = data[:, 0], data[:, 1], data[:, 2]
+        elif self.file_flag == 2:
+            with fits.open(self.fits_file) as hdul:
+                self.spec = hdul[0].data.flatten()
+                header = hdul[0].header
+                crpix1, crval1, cdelt1 = header.get('CRPIX1'), header.get('CRVAL1'), header.get('CDELT1')
+                self.wav = crval1 + (np.arange(len(self.spec)) - (crpix1 - 1)) * cdelt1
+                self.err = self.spec * 0.1 # ASSUME AN ARBITRARY ERROR SPECTRUM FOR NOW
+        elif self.file_flag == 3:
+            print("Reading file flag 3")#DEBUG
+            print("self.fits_file:", self.fits_file)#DEBUG
+            data = np.loadtxt(self.fits_file)
+            print(data)
+            self.wav, self.spec, self.err = data[:, 0], data[:, 1], data[:, 1] * 0.1
+        elif self.file_flag == 4:
+            data = np.loadtxt(self.fits_file)
+            self.wav, self.spec, self.err = data[:, 0], data[:, 2], data[:, 3]
+        elif self.file_flag == 5:
+            with fits.open(self.fits_file) as hdul:
+                data = hdul[1].data
+                self.wav = data['wave']
+                self.spec = data['flux']
+                self.err = data['flux'] * 0.1
+        elif self.file_flag == 6:
+            with fits.open(self.fits_file) as hdul:
+                data = hdul[1].data
+                self.wav = data[0][0]
+                self.spec = data[0][1]
+                self.err = data[0][1] * 0.1
+        elif self.file_flag == 7:
+            with fits.open(self.fits_file) as hdul:
+                hdul.info()
+                data = hdul['SPECTRUM'].data
+                self.wav = np.nan_to_num(data['wave'], nan=0.0)
+                wav_mid = np.nan_to_num(data['wave_grid_mid'], nan=0.0)
+                self.spec = np.nan_to_num(data['flux'], nan=0.0)
+                ivar = np.nan_to_num(data['ivar'], nan=0.0)
+                mask = np.nan_to_num(data['mask'], nan=0)
+                self.err = np.sqrt(np.where(ivar > 0, 1 / ivar, 0))
+        elif self.file_flag == 8:
+            with fits.open(self.fits_file) as hdul:
+                data = hdul['SPECTRUM'].data
+                self.wav = data['WAVE'][0]
+                self.spec = data['FLUX'][0]
+                self.err  = data['ERR'][0]
+        elif self.file_flag == 9:
+            with fits.open(self.fits_file) as hdul:
+                data = hdul[1].data
+                self.wav = data['WAVE'][0]
+                self.spec = data['FLUX'][0]
+                self.err  = data['ERR'][0]
+        elif self.file_flag == 10:
+            # Reading .sed or .txt format: 2-column ASCII with comment lines in nm
+            wavelengths = []
+            fluxes = []
+            with open(self.fits_file, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        wavelengths.append(float(parts[0]))  # nm
+                        fluxes.append(float(parts[1]))       # arbitrary units
+
+            self.wav = np.array(wavelengths)
+            self.spec = np.array(fluxes)
+            self.err = self.spec * 0.1
+        else:
+            with fits.open(self.fits_file) as hdul:
+                self.wav, self.spec, self.err = hdul[0].data, hdul[1].data, hdul[2].data
+
+        # print("wav:",self.wav)
+        # print("spec:",self.spec)
+
+        # Define initial plot limits
+        xlim = (self.wav.min(), self.wav.max())
+        ylim = (self.spec.min(), self.spec.max())
+        redshift = self.redshift
+        zoom_factor = self.zoom_factor
+
+        # Store original bounds at the beginning
+        self.original_xlim = xlim
+        self.original_ylim = ylim
+
+        # Store original spectrum
+        self.original_spec = self.spec
+
+        # Store regions and axis bounds
+        self.continuum_regions = []
+        self.line_region = []
+        self.x_upper_bound = xlim[1]
+        self.x_lower_bound = xlim[0]
+        self.y_upper_bound = ylim[1]
+        self.y_lower_bound = ylim[0]
+
+        # To track axvspan objects
+        self.continuum_patches = []
+        self.line_patches = []
+
+        # Set up x_data variable to store the currently plotted data (wavelength vs. velocity)
+        self.x_data = self.wav # Default is wavelength
+
+        # Set up plot
+        self.fig, self.ax = plt.subplots(figsize=(10, 6))
+        # Adjust plot
+        self.fig.subplots_adjust(bottom=0.35)
+        self.step_spec, = self.ax.step(self.x_data, self.spec, label='Spectrum', color='black', where='mid')
+        self.line_spec, = self.ax.plot(self.x_data, self.spec, color='black', visible=False)
+        self.step_error, = self.ax.step(self.x_data, self.err, color='red', linestyle='--', alpha=0.4, label='Error', where='mid')
+        self.line_error, = self.ax.plot(self.x_data, self.err, color='red', linestyle='--', alpha=0.4, visible=False)
+        self.spectrum_line = self.step_spec if self.is_step_plot else self.line_spec
+        self.error_line = self.step_error if self.is_step_plot else self.line_error
+        self.ax.plot(self.x_data, [0] * len(self.x_data), color='gray', linestyle='--', linewidth=1) # Add horizontal line at y=0
+        self.ax.set_xlabel('Wavelength (Å)')
+        self.ax.set_ylabel(r'Flux (arbitrary units)') # Use arbitrary units instead
+        # self.ax.set_ylabel(r'Flux (erg s$^{-1}$ cm$^{-2}$ Å$^{-1}$)')
+        self.ax.set_title(title)
+        # Set initial plot limits
+        self.ax.set_xlim(xlim)
+        self.ax.set_ylim(ylim)
+
+        # Determine the range of xlim
+        self.x_range = xlim[1] - xlim[0]
+
+        # Update the x-ticks
+        self.update_ticks(self.ax)
+
+        # Set the custom window title
+        self.fig.canvas.manager.set_window_title("QASAP - Quick Analysis of Spectra and Profiles (v0.5)")
+
+        self.ax.legend()
+
+        # Connect the key press and mouse move event
+        self.fig.canvas.mpl_connect('motion_notify_event', self.on_mouse_move)
+        self.fig.canvas.mpl_connect("key_press_event", self.on_key)
+        # Connect x-bounds update to the main plot's x-axis
+        self.ax.callbacks.connect('xlim_changed', self.update_residual_xbounds)
+        # self.fig.canvas.setFocus() # Removed this because it was not needed
+        # self.fig.canvas.draw() # Removed this because it was not needed
+
+        plt.show()
+
+        self.fig.canvas.setFocus() # Removed this because it was not needed
+        self.fig.canvas.draw() # Removed this because it was not needed
+
+    def read_lines(self):
+        # Read spectral lines from file
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        line_file = os.path.join(script_dir, 'emlines.txt')
+        line_ids = []
+        line_wavelengths = []
+        with open(line_file, 'r') as file:
+            for line in file:
+                parts = line.strip().split(',')
+                if len(parts) == 2:
+                    line_ids.append(parts[1].strip())
+                    line_wavelengths.append(float(parts[0].strip()))
+        line_wavelengths = np.array(line_wavelengths)
+        return line_wavelengths, line_ids
+    
+    def read_osc(self):
+        # Read spectral lines from file
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        line_file = os.path.join(script_dir, 'emlines_osc.txt')
+        line_ids = []
+        line_wavelengths = []
+        line_osc = []
+        with open(line_file, 'r') as file:
+            for line in file:
+                parts = line.strip().split(',')
+                if len(parts) == 3:
+                    line_ids.append(parts[1].strip())
+                    line_wavelengths.append(float(parts[0].strip()))
+                    line_osc.append(float(parts[2].strip()))
+        line_wavelengths = np.array(line_wavelengths)
+        line_osc = np.array(line_osc)
+        return line_wavelengths, line_ids, line_osc
+
+    def read_instrument_bands(self):
+        # Read instrument bands from file
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        bands_file = os.path.join(script_dir, 'instrument_bands.txt')
+        with open(bands_file, 'r') as file:
+            for line in file:
+                parts = line.strip().split(',')
+                if len(parts) == 3:
+                    self.band_ranges.append((parts[0], float(parts[1]), float(parts[2])))
+        self.band_ranges = np.array(self.band_ranges)
+
+    def process_lsf(self, lsf):
+        try:
+            # Check if `lsf` is a float (interpreted as kernel width in km/s)
+            lsf_width = float(lsf) # FWHM
+            # Construct a Gaussian LSF kernel with the specified FWHM
+            sigma = lsf_width / (2*np.sqrt(2*np.log(2)))  # Convert FWHM to standard deviation (approximation)
+            kernel_size = int(8 * sigma)  # Define kernel size based on sigma
+            self.lsf_kernel_x = np.linspace(-4 * sigma, 4 * sigma, kernel_size)
+            self.lsf_kernel_y = np.exp(-0.5 * (self.lsf_kernel_x / sigma)**2)
+            self.lsf_kernel_y /= np.sum(self.lsf_kernel_y)  # Normalize to sum to 1
+            print(f"Using Gaussian LSF with FWHM {lsf_width} km/s.")
+        
+        except ValueError:
+            # Otherwise, assume `lsf` is a file path
+            try:
+                data = np.loadtxt(lsf)  # Load the LSF file
+                self.lsf_kernel_x = data[:, 0] # Velocity units
+                self.lsf_kernel_y = data[:, 1] / np.sum(data[:, 1])  # Flux normalized to 1
+                print(f"Using custom LSF from file: {lsf}")
+            except Exception as e:
+                print(f"Error loading LSF from file {lsf}: {e}")
+                sys.exit(1)
+
+    def apply_lsf(self, profile):
+        """Convolves the input y_data with the LSF kernel."""
+        if self.lsf_kernel_x is not None and self.lsf_kernel_y is not None and self.is_velocity_mode:
+            # Interpolate LSF kernel to match the profile shape
+            lsf_interp = interp1d(self.lsf_kernel_x, self.lsf_kernel_y, bounds_error=False, fill_value=0)
+            # Create x-values that match the profile's x-values
+            # profile_x = np.linspace(np.min(self.x_data), np.max(self.x_data), len(profile)) # DON'T USE THIS LINE!!!
+            new_lsf_kernel_x = np.linspace(np.min(self.lsf_kernel_x), np.max(self.lsf_kernel_x), len(profile)) # Create x-array with same size as the fitted profile
+            lsf_interp_y = lsf_interp(new_lsf_kernel_x) # Interpolated LSF values
+            lsf_interp_y /= np.sum(lsf_interp_y) # Normalize
+            # print("new_lsf_kernel_x:",new_lsf_kernel_x) # DEBUG
+            # print("lsf_interp_y:",lsf_interp_y)
+            # print("Plotting convolution kernel")
+            # self.ax.step(self.lsf_kernel_x, self.lsf_kernel_y, color='purple', linestyle=':')
+            # Convolve the profile with the interpolated LSF
+            convolved_profile = np.convolve(profile, lsf_interp_y, mode='same')  # Use 'same' to maintain the size
+            # print("Plotting convolved profile")
+            # self.ax.step(new_lsf_kernel_x, convolved_profile, color='blue', linestyle=':')
+            return convolved_profile
+        else:
+            return profile  # Return original if no LSF kernel
+
+    # Update plot to reflect new axis bounds
+    def update_bounds(self):
+        self.ax.set_xlim(self.x_lower_bound, self.x_upper_bound)
+        if self.is_residual_shown:
+            self.residual_ax.set_xlim(self.x_lower_bound, self.x_upper_bound)
+        self.ax.set_ylim(self.y_lower_bound, self.y_upper_bound)
+        self.fig.canvas.draw_idle()
+
+    def update_ticks(self, ax):
+        # Set initial plot limits
+        xlim = ax.get_xlim()
+        ylim = ax.get_ylim()
+        # Determine the range of xlim
+        x_range = xlim[1] - xlim[0]
+        # Conditional tick settings based on the range of xlim
+        if x_range >= 10000:
+            major_ticks = np.arange(np.floor(xlim[0] / 10000) * 10000, np.ceil(xlim[1] / 10000) * 10000 + 1, 10000)
+            major_ticks = major_ticks[(major_ticks >= xlim[0]) & (major_ticks <= xlim[1])]  # Filter to stay within xlim
+            minor_ticks = np.arange(np.floor(xlim[0] / 1000) * 1000, np.ceil(xlim[1] / 1000) * 1000 + 1, 1000)
+            minor_ticks = minor_ticks[(minor_ticks >= xlim[0]) & (minor_ticks <= xlim[1])]  # Filter to stay within xlim
+        elif 1000 <= x_range < 10000:
+            major_ticks = np.arange(np.floor(xlim[0] / 1000) * 1000, np.ceil(xlim[1] / 1000) * 1000 + 1, 1000)
+            major_ticks = major_ticks[(major_ticks >= xlim[0]) & (major_ticks <= xlim[1])]  # Filter to stay within xlim
+            minor_ticks = np.arange(np.floor(xlim[0] / 100) * 100, np.ceil(xlim[1] / 100) * 100 + 1, 100)
+            minor_ticks = minor_ticks[(minor_ticks >= xlim[0]) & (minor_ticks <= xlim[1])]  # Filter to stay within xlim
+        elif 100 <= x_range < 1000:
+            major_ticks = np.arange(np.floor(xlim[0] / 100) * 100, np.ceil(xlim[1] / 100) * 100 + 1, 100)
+            major_ticks = major_ticks[(major_ticks >= xlim[0]) & (major_ticks <= xlim[1])]  # Filter to stay within xlim
+            minor_ticks = np.arange(np.floor(xlim[0] / 10) * 10, np.ceil(xlim[1] / 10) * 10 + 1, 10)
+            minor_ticks = minor_ticks[(minor_ticks >= xlim[0]) & (minor_ticks <= xlim[1])]  # Filter to stay within xlim
+        elif 10 <= x_range < 100:
+            major_ticks = np.arange(np.floor(xlim[0] / 10) * 10, np.ceil(xlim[1] / 10) * 10 + 1, 10)
+            major_ticks = major_ticks[(major_ticks >= xlim[0]) & (major_ticks <= xlim[1])]  # Filter to stay within xlim
+            minor_ticks = np.arange(np.floor(xlim[0] / 1) * 1, np.ceil(xlim[1] / 1) * 1 + 1, 1)
+            minor_ticks = minor_ticks[(minor_ticks >= xlim[0]) & (minor_ticks <= xlim[1])]  # Filter to stay within xlim
+        elif 1 <= x_range < 10:
+            major_ticks = np.arange(np.floor(xlim[0] / 1) * 1, np.ceil(xlim[1] / 1) * 1 + 1, 1)
+            major_ticks = major_ticks[(major_ticks >= xlim[0]) & (major_ticks <= xlim[1])]  # Filter to stay within xlim
+            minor_ticks = np.arange(np.floor(xlim[0] / 0.1) * 0.1, np.ceil(xlim[1] / 0.1) * 0.1 + 1, 0.1)
+            minor_ticks = minor_ticks[(minor_ticks >= xlim[0]) & (minor_ticks <= xlim[1])]  # Filter to stay within xlim
+        else:
+            # Use default ticks if range is too small or too large
+            major_ticks = ax.get_xticks()
+            minor_ticks = []
+        # Set major and minor ticks
+        ax.set_xticks(major_ticks)
+        ax.set_xticks(minor_ticks, minor=True)
+        # Move ticks to the inside
+        ax.tick_params(axis='x', direction='in', which='minor', length=3, top=True, bottom=True)  # Adjust the length as needed
+        ax.tick_params(axis='x', direction='in', which='major', length=6, top=True, bottom=True)  # Adjust the length as needed
+        ax.tick_params(axis='y', direction='in', which='minor', length=3, left=True, right=True)  # Adjust the length as needed
+        ax.tick_params(axis='y', direction='in', which='major', length=6, left=True, right=True)  # Move y-ticks to the inside as well
+        self.fig.canvas.draw_idle()
+
+    def update_residual_ticks(self):
+        if self.residual_ax is not None:
+            self.update_ticks(self.residual_ax)
+            self.ax.set_xticks([])
+            plt.draw()
+
+    def update_residual_ybounds(self):
+        # Get the current x-limits of the residual axis
+        x_min, x_max = self.residual_ax.get_xlim()
+
+        # Mask residual data within the current x-limits
+        mask = (self.x_data >= x_min) & (self.x_data <= x_max)
+        visible_residual = self.residuals[mask]
+
+        if visible_residual.size > 0:
+            # Calculate the min and max of the visible residual data
+            min_residual = visible_residual.min()
+            max_residual = visible_residual.max()
+
+            # Add a 10% margin to both top and bottom for display purposes
+            margin = 0.1 * (max_residual - min_residual)
+            self.residual_ax.set_ylim(min_residual - margin, max_residual + margin)
+
+        # Redraw the canvas to apply changes
+        self.fig.canvas.draw_idle()
+
+    # Update the plot with new redshift
+    def update_redshift(self, new_redshift):
+        self.redshift = new_redshift # Update the global redshift variable
+        self.display_linelist()
+
+    # Smooth the spectrum with a Gaussian kernel
+    def smooth_spectrum(self, kernel_width):
+        from scipy.ndimage import gaussian_filter1d  # Import here to avoid global imports
+
+        # Debug: Ensure original spectrum data is present
+        if self.original_spec is None:
+            print("Error: original_spec is not defined.")
+            return
+
+        print("Applying Gaussian smoothing with kernel width:", kernel_width)
+        self.smoothed_spec = gaussian_filter1d(self.original_spec, sigma=kernel_width)
+        
+        # Debug: Verify smoothing result
+        print("Smoothed spectrum (first 5 values):", self.smoothed_spec[:5])
+
+        if self.smoothed_spec is not None:  # Check if the spectrum_line is defined
+            print("Spectrum line updated with smoothed data.")
+        else:
+            print("Error: spectrum_line is not defined.")
+
+    # Check if there is an existing fitted continuum covering the current bounds
+    def get_existing_continuum(self, left_bound, right_bound):
+        try:
+            for continuum_fit in self.continuum_fits:
+                if continuum_fit['bounds'][0] <= left_bound and continuum_fit['bounds'][1] >= right_bound:
+                    return (
+                        self.continuum_model(self.x_data[(self.x_data >= left_bound) & (self.x_data <= right_bound)],
+                                            continuum_fit['a'],
+                                            continuum_fit['b']),
+                        continuum_fit['a'],
+                        continuum_fit['b'] # Continuum array within bounds, a, b
+                    )
+        except ValueError:
+            print("No existing continuum within bounds")
+            return
+
+    def get_bounds(self, fit):
+        if self.is_velocity_mode:
+            if fit['is_velocity_mode']:
+                left_bound, right_bound = fit['bounds'] # May need to change this to convert to the current self.rest_wavelength
+            else:
+                left_bound, right_bound = self.wav_to_vel(left_bound, self.rest_wavelength, z=self.redshift), self.wav_to_vel(right_bound, self.rest_wavelength, z=self.redshift)
+        else:
+            if fit['is_velocity_mode']:
+                left_bound, right_bound = self.vel_to_wav(left_bound, self.rest_wavelength, z=self.redshift), self.wav_to_vel(right_bound, self.rest_wavelength, z=self.redshift)
+            else:
+                left_bound, right_bound = fit['bounds']
+
+        return left_bound, right_bound
+
+    # Code for EW from Gaussian
+    def calculate_equivalent_width(self, profile_function, continuum_params, x_bounds):
+        c_in_km_per_s = 2.9979246e5
+        # Generate x values over the specified bounds for integration
+        x_values = np.linspace(x_bounds[0], x_bounds[1], 100)
+        if self.is_velocity_mode:
+            x_values = self.rest_wavelength * (1 + x_values/c_in_km_per_s)
+        
+        # Calculate profile and continuum values
+        profile_values = profile_function(x_values)
+        continuum_values = self.continuum_model(x_values, *continuum_params)
+        delta_lambda = np.diff(x_values)
+        delta_lambda = np.append(delta_lambda, delta_lambda[-1])
+        
+        # Calculate the equivalent width (EW) using the trapezoidal rule
+        if self.is_velocity_mode:
+            x_values
+            ew = (self.rest_wavelength/c_in_km_per_s) * np.trapz(1 - (profile_values + continuum_values) / continuum_values, x_values)
+        else:
+            ew = np.trapz(1 - (profile_values + continuum_values) / continuum_values, x_values)
+        ew_r = ew / (1 + self.redshift)
+
+        # Calculate the equivalent width (EW) using summation
+        # ew = np.sum((1 - profile_values / continuum_values) * delta_lambda)
+
+        # Print debug information
+        print(f"Avg. continuum level: {np.mean(continuum_values):.2f}")
+        print(f"Avg. delta_lambda: {np.mean(delta_lambda):.2f}")
+        print(f"Equivalent Width (observed): {ew:.2f} Å")
+        print(f"Equivalent Width (rest): {ew_r:.2f} Å")
+        return ew
+    
+    # Code for EW from Gaussian
+    def expr_ew(self, comp_x, cont_y, model_y, redshift):
+        ew = np.trapz(1 - (model_y + cont_y) / cont_y, comp_x)
+        ew_r = ew / (1 + redshift)
+        return ew, ew_r
+
+    def calculate_and_plot_residuals(self):
+        self.residuals = self.calculate_residuals()  # Custom function to calculate residuals
+        # Update plot
+        self.residual_line, = self.residual_ax.step(self.x_data, self.residuals, color='royalblue', where='mid')
+        self.residual_ax.plot(self.x_data, [0] * len(self.x_data), color='gray', linestyle='--', linewidth=1) # Add horizontal line at y=0
+        self.update_bounds()
+        self.update_residual_ticks()  # Update ticks to look nice
+        self.update_residual_ybounds()  # Update y-bounds to look nice
+        if self.is_velocity_mode:
+            self.residual_line.set_xdata(self.velocities)
+        
+    def toggle_residual_panel(self):
+        if not self.is_residual_shown:
+            # Create residual panel only if it doesn't exist
+            if self.residual_ax is None:
+                # Create a new axis for residuals below the spectrum
+                self.residual_ax = self.fig.add_axes([0.125, 0.2, 0.775, 0.15])  # Adjusted position and height and position below the main plot
+            if self.is_velocity_mode:
+                self.residual_ax.set_xlabel(r"Velocity (km s$^{-1}$)")
+            else:
+                self.residual_ax.set_xlabel("Wavelength (Å)")
+            self.residual_ax.set_ylabel("Residuals")
+
+            # Calculate and plot residuals
+            self.calculate_and_plot_residuals()
+            self.residual_ax.set_visible(True)  # Show the residual panel
+            self.ax.set_xticks([])  # Hide x-ticks of the main plot
+            self.residual_ax.set_xlim(self.ax.get_xlim())  # Match x-bounds with the main plot
+            self.update_residual_ybounds()
+            self.is_residual_shown = True
+        else:
+            # Hide the residual panel
+            self.residual_ax.clear()
+            self.residual_ax.set_visible(False)
+            self.is_residual_shown = False
+
+            self.ax.set_xticks(self.ax.get_xticks())  # Restore the x-ticks based on current limits
+
+        plt.draw()  # Refresh plot to show/hide residual panel
+
+    def calculate_residuals(self):
+        # Calculate total fitted Gaussian, Voigt, and continuum values
+        gaussian_sum = np.zeros_like(self.spec)
+        for fit in self.gaussian_fits:
+            left_bound, right_bound = fit['bounds']
+            comp_x = self.x_data[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
+            amp = fit['amp']
+            mean = fit['mean']
+            stddev = fit['stddev']
+            gaussian_sum[(self.x_data >= left_bound) & (self.x_data <= right_bound)] += self.gaussian(comp_x, amp, mean, stddev)
+
+        voigt_sum = np.zeros_like(self.spec)
+        for fit in self.voigt_fits:  # Loop through each fit that's stored
+            amp = fit['amp']
+            center = fit['center']
+            gamma = fit['gamma']
+            sigma = fit['sigma']
+            left_bound, right_bound = fit['bounds']  # Get bounds from fit
+            
+            # Create the comp_x array based on the left and right bounds
+            comp_x = self.x_data[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
+
+            # Update voigt_sum for the valid range
+            voigt_sum[(self.x_data >= left_bound) & (self.x_data <= right_bound)] += self.voigt(comp_x, amp=amp, center=center, gamma=gamma, sigma=sigma)
+        
+        continuum_sum = np.zeros_like(self.spec)
+        if self.continuum_fits:
+            for continuum_fit in self.continuum_fits:
+                left_bound, right_bound = continuum_fit['bounds']
+                comp_x = self.x_data[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
+                a, b = continuum_fit['a'], continuum_fit['b']
+                continuum_sum[(self.x_data >= left_bound) & (self.x_data <= right_bound)] = self.continuum_model(comp_x, a, b)
+
+        # Calculate residual as (spectrum - fitted Gaussians - continuum)
+        return self.spec - gaussian_sum - voigt_sum - continuum_sum
+
+    def update_residual_xbounds(self, event):
+        if self.is_residual_shown and self.residual_ax is not None:
+            self.residual_ax.set_xlim(self.ax.get_xlim())
+            plt.draw()
+
+    # Function to save the current plot as a PDF
+    def save_plot_as_pdf(self):
+        """
+        Saves the current figure as a PDF, hiding specific text boxes temporarily.
+        """
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"plot_{timestamp}.pdf"
+
+        self.fig.savefig(filename, format='pdf', bbox_inches='tight')
+
+        print(f"Plot saved as {filename}")
+
+    def wav_to_vel(self, lam_obs, lam_0, z):
+        c_in_km_per_s = 2.9979246e5
+        lam_rest = lam_obs * (1 + z) ** (-1)  # lam_rest is wavelength in the rest frame (object not moving)
+        v = c_in_km_per_s * (lam_rest - lam_0) / lam_0
+        return v
+
+    def vel_to_wav(self, v, lam_0, z):
+        c_in_km_per_s = 2.9979246e5
+        lam_rest = lam_0 * (1 + v / c_in_km_per_s)
+        # Convert back to observed wavelength if redshifted
+        lam_obs = lam_rest * (1 + z)
+        return lam_obs
+
+    def convert_continuum_to_velocity(self, rest_wavelength):
+        # Convert all defined continuum regions to velocities
+        velocity_regions = []
+        for start, end in self.continuum_regions:
+            start_vel = self.wav_to_vel(start, rest_wavelength, z=self.redshift)
+            end_vel = self.wav_to_vel(end, rest_wavelength, z=self.redshift)
+            velocity_regions.append((start_vel, end_vel))
+        return velocity_regions
+
+    def convert_to_velocity(self, line):
+    # def convert_gaussian_to_velocity(self, mean, bounds, line):
+        """Convert Gaussian mean and bounds from wavelength to velocity."""
+        # velocity_mean = self.wav_to_vel(mean, self.rest_wavelength, z=self.redshift)
+        # velocity_bounds = (
+        #     self.wav_to_vel(bounds[0], self.rest_wavelength, z=self.redshift),
+        #     self.wav_to_vel(bounds[1], self.rest_wavelength, z=self.redshift)
+        # )
+        # Extract the x-data (wavelength) from line for conversion
+        wavelength_line_data = line.get_xdata()
+        velocity_line_data = self.wav_to_vel(wavelength_line_data, self.rest_wavelength, z=self.redshift)
+        # return velocity_mean, velocity_bounds, velocity_line
+        return velocity_line_data
+
+    def convert_to_wavelength(self, line):
+    # def convert_gaussian_to_wavelength(self, velocity_mean, bounds, line):
+        """Convert Gaussian mean and bounds from velocity back to wavelength."""
+        # wavelength_mean = self.vel_to_wav(velocity_mean, self.rest_wavelength, z=self.redshift)
+        # wavelength_bounds = (
+        #     self.vel_to_wav(bounds[0], self.rest_wavelength, z=self.redshift),
+        #     self.vel_to_wav(bounds[1], self.rest_wavelength, z=self.redshift)
+        # )
+        # wavelength_bounds = bounds
+        # Extract the velocity data from line for conversion
+        velocity_line_data = line.get_xdata()
+        wavelength_line_data = self.vel_to_wav(velocity_line_data, self.rest_wavelength, z=self.redshift)
+        # return wavelength_mean, wavelength_bounds, wavelength_line
+        return wavelength_line_data
+
+    def convert_voigt_to_velocity(self, line):
+        """Convert Voigt parameters from wavelength to velocity."""
+        # velocity_params = {
+        #     'amp': fit['amp'],
+        #     'center': self.wav_to_vel(fit['center'], self.rest_wavelength, z=self.redshift),
+        #     'sigma': fit['sigma'],
+        #     'gamma': fit['gamma']
+        # }
+        # return velocity_params
+        wavelength_line_data = line.get_xdata()
+        velocity_line_data = self.wav_to_vel(wavelength_line_data, self.rest_wavelength, z=self.redshift)
+        # return wavelength_mean, wavelength_bounds, wavelength_line
+        return velocity_line_data
+
+
+    def convert_voigt_to_wavelength(self, line):
+        """Convert Voigt parameters from velocity back to wavelength."""
+        # wavelength_params = {
+        #     'amp': velocity_params['amp'],
+        #     'center': velocity_params['center'],
+        #     'sigma': velocity_params['sigma'],
+        #     'gamma': velocity_params['gamma']
+        # }
+        # return wavelength_params
+        velocity_line_data = line.get_xdata()
+        wavelength_line_data = self.vel_to_wav(velocity_line_data, self.rest_wavelength, z=self.redshift)
+        # return wavelength_mean, wavelength_bounds, wavelength_line
+        return wavelength_line_data
+
+    def activate_velocity_mode(self):
+        print("Entering velocity mode. Please enter the wavelength to set as rest-frame (in Å):")
+        
+        # Request rest-frame wavelength input from the user
+        try:
+            # self.rest_wavelength = float(input("Rest-frame wavelength: "))
+            # Create and show LineListWindow for selection
+            self.line_list_window = LineListWindow(self.line_wavelengths, self.line_ids)
+            self.line_list_window.selected_line.connect(self.set_rest_wavelength)
+            self.line_list_window.show()
+        except ValueError:
+            print("Invalid wavelength input. Please enter a numeric value.")
+            return
+
+    def set_rest_wavelength(self, line_id, line_wavelength):
+        # Set rest_wavelength and perform the conversion
+        self.rest_id, self.rest_wavelength = line_id, line_wavelength
+        print(f"Selected rest wavelength: {self.rest_wavelength:.2f}  d")
+        
+        # Calculate velocity for each wavelength point in the spectrum
+        self.velocities = self.wav_to_vel(self.wav, self.rest_wavelength, z=self.redshift)
+        self.x_data = self.velocities  # Set x_data to velocities
+
+        # Update x-axis labels and limits for the main plot
+        self.spectrum_line.set_xdata(self.x_data)
+        self.step_spec.set_xdata(self.x_data)
+        self.step_error.set_xdata(self.x_data)
+        self.line_spec.set_xdata(self.x_data)
+        self.line_error.set_xdata(self.x_data)
+        self.ax.set_xlabel(r"Velocity (km s$^{-1}$)")
+        self.ax.plot(self.x_data, [0] * len(self.x_data), color='gray', linestyle='--', linewidth=1) # Add horizontal line at y=0
+
+        # Update continuum fits to velocity space
+        for fit in self.continuum_fits:
+            # Convert the line data to velocity space
+            # region_start, region_end = fit['bounds']
+            # region_wav = np.linspace(region_start, region_end, num=100)  # Increase num for smoother line
+            # continuum_values = np.polyval((fit['a'], fit['b']), region_wav)  # Calculate continuum fit values
+
+            # # Convert wavelength region to velocity
+            # continuum_velocities = self.wav_to_vel(region_wav, self.rest_wavelength, z=self.redshift)
+            
+            # # Update the line to display in velocity space
+            # fit['line'].set_xdata(continuum_velocities)
+            # fit['line'].set_ydata(continuum_values)
+            velocity_line_data = self.convert_to_velocity(fit['line'])
+            fit['line'].set_xdata(velocity_line_data)
+
+            for patch_data in fit['patches']:
+                if fit['is_velocity_mode']:
+                    vel_start, vel_end = patch_data['bounds']
+                    # if fit['rest_wavelength'] != self.rest_wavelength: # Convert to the new rest wavelength based on the rest wavelength used for the fit
+                    #     vel_start = self.wav_to_vel(wav_start, self.rest_wavelength, z=self.redshift) + self.wav_to_vel(fit['rest_wavelength'], self.rest_wavelength, z=0)
+                    #     vel_end = self.wav_to_vel(wav_end, self.rest_wavelength, z=self.redshift) + self.wav_to_vel(fit['rest_wavelength'], self.rest_wavelength, z=0)
+                else:
+                    wav_start, wav_end = patch_data['bounds']
+                    vel_start = self.wav_to_vel(wav_start, self.rest_wavelength, z=self.redshift)
+                    vel_end = self.wav_to_vel(wav_end, self.rest_wavelength, z=self.redshift)
+                patch_data['patch'].remove()  # Remove original wavelength-based patch
+                new_patch = self.ax.axvspan(vel_start, vel_end, color='magenta', alpha=0.3, hatch='//')
+                patch_data['patch'] = new_patch  # Update with new velocity-space patch
+
+            # # Store wavelength-based patch bounds before removing original patches
+            # patch_bounds = []
+            # for original_patch in fit['patches']:
+            #     # Check if the original_patch is a valid patch object
+            #     if isinstance(original_patch, plt.Polygon) or isinstance(original_patch, plt.Rectangle):
+            #         wav_start, wav_end = original_patch.get_xy()[0][0], original_patch.get_xy()[2][0]
+            #         patch_bounds.append((wav_start, wav_end))
+            #         original_patch.remove()  # Remove the wavelength-based patch
+            #     else:
+            #         print(f"Warning: Expected a patch object but found {type(original_patch)}. Skipping.")
+
+            # # Clear the patches list and add new velocity-space patches
+            # fit['patches'].clear()
+            # for wav_start, wav_end in patch_bounds:
+            #     vel_start = self.wav_to_vel(wav_start, self.rest_wavelength, z=self.redshift)
+            #     vel_end = self.wav_to_vel(wav_end, self.rest_wavelength, z=self.redshift)
+                
+            #     # Create and add the new patch in velocity space
+            #     new_patch = self.ax.axvspan(vel_start, vel_end, color='magenta', alpha=0.3, hatch='//')
+            #     fit['patches'].append(new_patch)  # Store the new patch
+
+        # Convert Gaussian fits to velocity space
+        for fit in self.gaussian_fits:
+            # FOR NOW, DON'T WORRY ABOUT THE CONVERSION BETWEEN WAVELENGTH AND VELOCITY AND INSTEAD ACCESS BOUNDS
+            # wavelength_mean, wavelength_bounds, wavelength_line = fit['mean'], fit['bounds'], fit['line']
+            # velocity_mean, velocity_bounds, velocity_line = self.convert_gaussian_to_velocity(fit, wavelength_bounds)
+            # fit['mean'] = velocity_mean
+            # fit['bounds'] = velocity_bounds
+            # Update the Gaussian line to plot in velocity space
+            velocity_line_data = self.convert_to_velocity(fit['line'])
+            fit['line'].set_xdata(velocity_line_data)
+
+        # Convert Voigt fits to velocity space
+        for fit in self.voigt_fits:  # Assuming you have a self.voigt_fits list
+            # FOR NOW, DON'T WORRY ABOUT THE CONVERSION BETWEEN WAVELENGTH AND VELOCITY AND INSTEAD ACCESS BOUNDS
+            # wavelength_mean, wavelength_bounds, wavelength_line = fit['center'], fit['bounds'], fit['line']
+            # velocity_mean, velocity_bounds, velocity_line = self.convert_voigt_to_velocity(fit, wavelength_bounds)
+            # fit['center'] = velocity_mean
+            # fit['bounds'] = velocity_bounds
+            # Update the Voigt line to plot in velocity space
+            velocity_line_data = self.convert_to_velocity(fit['line'])
+            fit['line'].set_xdata(velocity_line_data)
+
+        # Update residual plot if shown
+        if self.is_residual_shown:
+            self.residual_ax.set_xlim(-3000, 3000)  # Set limits in velocity
+            self.residual_ax.set_xlabel(r"Velocity (km s$^{-1}$)")
+            self.update_residual_ticks()
+            self.update_residual_ybounds()
+            self.calculate_and_plot_residuals()
+
+        # Update main axis ticks and redraw the plot
+        self.update_ticks(self.ax)
+        self.ax.set_xlim(-3000, 3000)  # Adjust as needed for viewing range
+
+        plt.draw()
+        print(f"Velocity mode activated with rest wavelength {self.rest_wavelength:.2f} Å and redshift {self.redshift:.3f}.")
+
+    def exit_velocity_mode(self):
+        
+        # Revert x-axis data to wavelength for main plot elements
+        self.x_data = self.wav  # Reset x_data to wavelength data
+        self.spectrum_line.set_xdata(self.x_data)
+        self.step_spec.set_xdata(self.x_data)
+        self.step_error.set_xdata(self.x_data)
+        self.line_spec.set_xdata(self.x_data)
+        self.line_error.set_xdata(self.x_data)
+        
+        # Set x-axis labels and limits back to wavelength
+        self.ax.set_xlabel("Wavelength (Å)")
+
+        # Update continuum fits to velocity space
+        for fit in self.continuum_fits:
+            # Convert the line data to velocity space
+            # region_start, region_end = fit['bounds']
+            # region_vel = np.linspace(region_start, region_end, num=100)  # Increase num for smoother line
+            # continuum_values = np.polyval((fit['a'], fit['b']), region_vel)  # Calculate continuum fit values
+
+            # # Convert wavelength region to wavelength
+            # continuum_wav = self.vel_to_wav(region_vel, self.rest_wavelength, z=self.redshift)
+            
+            # # Update the line to display in velocity space
+            # fit['line'].set_xdata(continuum_wav)
+            # fit['line'].set_ydata(continuum_values)
+            wavelength_line_data = self.convert_to_wavelength(fit['line'])
+            fit['line'].set_xdata(wavelength_line_data)
+
+            # Update continuum patches back to wavelength space
+            for patch_data in fit['patches']:
+                if not fit['is_velocity_mode']:
+                    wav_start, wav_end = patch_data['bounds']
+                else:
+                    vel_start, vel_end = patch_data['bounds']
+                    wav_start = self.vel_to_wav(vel_start, self.rest_wavelength, z=self.redshift)
+                    wav_end = self.vel_to_wav(vel_end, self.rest_wavelength, z=self.redshift)
+                patch_data['patch'].remove()  # Remove original wavelength-based patch
+                new_patch = self.ax.axvspan(wav_start, wav_end, color='magenta', alpha=0.3, hatch='//')
+                patch_data['patch'] = new_patch  # Update with new velocity-space patch
+
+            # # Store wavelength-based patch bounds before removing original patches
+            # patch_bounds = []
+            # for original_patch in fit['patches']:
+            #     vel_start, vel_end = original_patch.get_xy()[0][0], original_patch.get_xy()[2][0]
+            #     patch_bounds.append((vel_start, vel_end))
+            #     original_patch.remove()  # Remove the wavelength-based patch
+
+            # # Clear the patches list and add new velocity-space patches
+            # fit['patches'].clear()
+            # for vel_start, vel_end in patch_bounds:
+            #     wav_start = self.vel_to_wav(vel_start, self.rest_wavelength, z=self.redshift)
+            #     wav_end = self.vel_to_wav(vel_end, self.rest_wavelength, z=self.redshift)
+                
+            #     # Create and add the new patch in velocity space
+            #     new_patch = self.ax.axvspan(wav_start, wav_end, color='magenta', alpha=0.3, hatch='//')
+            #     fit['patches'].append(new_patch)  # Store the new patch
+
+        # Update Gaussian fits back to wavelength space
+        for fit in self.gaussian_fits:
+            # velocity_mean, velocity_bounds, velocity_line = fit['mean'], fit['bounds'], fit['line']
+            # wavelength_mean, wavelength_bounds, wavelength_line = self.convert_gaussian_to_wavelength(velocity_mean, velocity_bounds, velocity_line)
+            # fit['mean'] = wavelength_mean
+            # fit['bounds'] = wavelength_bounds
+            # Update the Gaussian line data to wavelength space
+            wavelength_line_data = self.convert_to_wavelength(fit['line'])
+            fit['line'].set_xdata(wavelength_line_data)
+
+        # Update Voigt fits back to wavelength space
+        for fit in self.voigt_fits:
+            # velocity_mean, velocity_bounds, velocity_line = fit['center'], fit['bounds'], fit['line']
+            # wavelength_mean, wavelength_bounds, wavelength_line = self.convert_voigt_to_wavelength(velocity_mean, velocity_bounds, velocity_line)
+            # fit['center'] = wavelength_mean
+            # fit['bounds'] = wavelength_bounds
+            # Update the Voigt line data to wavelength space
+            # fit['line'].set_xdata(wavelength_line)
+            wavelength_line_data = self.convert_to_wavelength(fit['line'])
+            fit['line'].set_xdata(wavelength_line_data)
+
+        # Update residual plot if it is shown
+        if self.is_residual_shown:
+            self.residual_line.set_xdata(self.wav)
+            self.residual_ax.set_xlim(self.wav.min(), self.wav.max())
+            self.residual_ax.set_xlabel("Wavelength (Å)")
+            self.update_residual_ticks()
+
+        # Update main axis ticks and redraw plot
+        self.update_ticks(self.ax)
+        self.ax.set_xlim(self.x_data.min(), self.x_data.max())
+        if self.is_residual_shown:
+            self.update_residual_ybounds()
+
+        self.rest_wavelength = None
+        self.rest_id = None
+        
+        plt.draw()
+        print("Exited velocity mode and reverted to wavelength space.")
+
+    # Define fitted functions
+    def gaussian(self, x, amp, mean, stddev):
+        y = amp * np.exp(-(x - mean)**2 / (2 * stddev**2))
+        # return y
+        return self.apply_lsf(y)
+
+    def multi_gaussian(self, x, *params):
+        y = np.zeros_like(x)
+        for i in range(0, len(params), 3):
+            amp, mean, stddev = params[i:i+3]
+            y += self.gaussian(x, amp, mean, stddev)
+        return y
+
+    def multi_gaussian_sharedsigma(self, x, *params):
+        y = np.zeros_like(x)
+        stddev = params[-1]
+        for i in range(0, len(params)-1, 2):
+            amp, mean = params[i:i+2]
+            y += self.gaussian(x, amp, mean, stddev)
+        return y
+
+    def voigt(self, x, amp, center, sigma, gamma):
+        # z = (x - center + 1j * gamma) / (sigma * np.sqrt(2))
+        # return amplitude * np.real(wofz(z))
+        tiny = np.finfo(float).eps
+        s2 = np.sqrt(2)
+        s2pi = np.sqrt(2*np.pi)
+        if gamma is None:
+            gamma = sigma
+        z = (x-center + 1j*gamma) / max(tiny, (sigma*s2))
+        y = amp*np.real(wofz(z)) / max(tiny, (sigma*s2pi))
+        return self.apply_lsf(y)
+
+    def multi_voigt(self, x, *params):
+        y = np.zeros_like(x)
+        for i in range(0, len(params), 4):  # Iterate over params in sets of four
+            amp, center, sigma, gamma = params[i:i+4]
+            y += self.voigt(x, amp, center, sigma, gamma)
+        return y
+
+    def continuum_model(self, x, a, b):
+        return a * x + b  # Linear model for continuum
+
+    # Define a function to fit the continuum
+    def fit_continuum(self, x, y, err, sigma_threshold=2, max_iterations=10, tolerance=1e-4):
+        """
+        Fits a continuum model to the provided data using iterative sigma-clipping.
+        """
+        try:
+            # Start with all values
+            mask = np.ones_like(y, dtype=bool)
+            prev_num_inliers = 0
+
+            for it in range(max_iterations):
+                # Apply the current mask to filter x and y arrays
+                x_filtered = x[mask]
+                y_filtered = y[mask]
+                err_filtered = err[mask]
+
+                # Fit the continuum model to the filtered data
+                params, pcov = curve_fit(self.continuum_model, x_filtered, y_filtered, sigma=err_filtered)
+                perr = np.sqrt(np.diag(pcov))
+                continuum = self.continuum_model(x, *params)
+
+                # Calculate residuals and updated mean and standard deviation
+                residuals = y - continuum
+                std_residuals = np.std(residuals)
+
+                # Update bounds for the current sigma threshold
+                lower_bound = -sigma_threshold * std_residuals
+                upper_bound = sigma_threshold * std_residuals
+
+                # Update mask to exclude outliers based on the new bounds
+                mask = (residuals >= lower_bound) & (residuals <= upper_bound)
+
+                # Check for convergence: stop if the number of inliers hasn't changed significantly
+                num_inliers = mask.sum()
+                if abs(num_inliers - prev_num_inliers) / num_inliers < tolerance:
+                    print(f"Convergence reached after {it + 1} iterations.")
+                    break
+
+                prev_num_inliers = num_inliers
+
+            else:
+                print("Warning: Maximum iterations reached without full convergence.")
+
+            # Return the final continuum and parameters
+            return continuum, params, perr
+        except RuntimeError as e:
+            print(f"Error in fitting continuum: {e}")
+            return None, None
+
+    # Function to clear all continuum regions
+    def clear_continuum_regions(self):
+        """
+        Clears all previously defined continuum regions from the plot.
+        """
+        for patch in self.continuum_patches:
+            patch.remove()
+        self.continuum_patches.clear()
+
+    # Function to clear the line region
+    def clear_line_region():
+        """
+        Clears all previously defined line regions from the plot.
+        """
+        for patch in self.line_patches:
+            patch.remove()
+        self.line_patches.clear()
+
+    def prompt_user_for_file_list(self):
+        """Prompt the user to choose which set of file suffixes to load"""
+        print("Choose the file suffix list to display:")
+        print("1. Show filter throughputs ending with 'w.txt'")
+        print("2. Show filter throughputs ending with 'lp.txt'")
+        print("3. Show filter throughputs ending with 'm.txt'")
+        print("4. Show filter throughputs ending with 'n.txt'")
+        print("5. Show filter throughputs ending with 'p.txt'")
+        print("6. Show filter throughputs ending with 'x.txt'")
+        print("7. Show all filter throughputs")
+        choice = input("Enter a number (1-7) to choose: ")
+
+        if choice == '1':
+            suffixes = ('w.txt',)
+        elif choice == '2':
+            suffixes = ('lp.txt',)
+        elif choice == '3':
+            suffixes = ('m.txt',)
+        elif choice == '4':
+            suffixes = ('n.txt',)
+        elif choice == '5':
+            suffixes = ('p.txt',)
+        elif choice == '6':
+            suffixes = ('x.txt',)
+        elif choice == '7':
+            suffixes = ('w.txt', 'lp.txt', 'm.txt', 'n.txt', 'p.txt', 'x.txt')
+        else:
+            print("Invalid choice. Defaulting to 'w.txt'.")
+            suffixes = ('w.txt',)
+        
+        return suffixes
+
+    def toggle_filter_bands(self, index):
+        """Toggle the display of filter bands and their labels on the plot."""
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        directories = [
+            os.path.join(base_dir, 'throughputs/WFC3_UVIS/'),
+            os.path.join(base_dir, 'throughputs/WFC3_IR/'),
+            os.path.join(base_dir, 'throughputs/ACS/'),
+            os.path.join(base_dir, 'throughputs/NIRCam/')
+        ]
+
+        # Ensure index is within bounds
+        if index >= len(directories):
+            print("Invalid directory index.")
+            return
+
+        # Set the chosen directory based on key press
+        throughput_dir = directories[index]
+
+        # Ensure x-axis limits are correctly defined as floats
+        x_limits = self.ax.get_xlim()
+        x_lower_bound = float(x_limits[0])
+        x_upper_bound = float(x_limits[1])
+
+        # If filter lines are already visible, remove them and toggle 'show_filters'
+        if self.show_filters:
+            for line in getattr(self, "filter_lines", []):
+                line.remove()  # Remove each Line2D object from the axes
+            self.filter_lines = []  # Clear the list after removal
+
+            # Remove each label as well
+            for label in getattr(self, "filter_labels", []):
+                label.remove()  # Remove each Text object from the axes
+            self.filter_labels = []  # Clear the list after removal
+        else:
+
+            # Get the file suffixes based on user input
+            suffixes = self.prompt_user_for_file_list()
+
+            # List all .txt files ending with 'w.txt'
+            throughput_files = [f for f in os.listdir(throughput_dir) if f.endswith(suffixes)]
+
+            # Get the y-axis limits for scaling the throughput curves
+            y_limits = self.ax.get_ylim()
+            y_min, y_max = y_limits
+
+            # Use a color map
+            colormap = cm.get_cmap('jet', len(throughput_files))
+
+            # Initialize lists to keep track of plotted lines and labels for clearing later
+            self.filter_lines = []
+            self.filter_labels = []
+
+            # Plot each filter band from the files with unique colors from the colormap
+            for i, file_name in enumerate(throughput_files):
+                # Extract the filter name, e.g., 'f814w' from 'f814w.txt'
+                filter_name = file_name.split('.')[0]
+                
+                # Load data from the file
+                file_path = os.path.join(throughput_dir, file_name)
+                data = np.loadtxt(file_path, skiprows=1)
+                
+                # Assuming the first column is wavelength and the second column is throughput
+                wavelengths = data[:, 0]
+                throughputs = data[:, 1]
+                
+                # Scale throughput to match the plot's y-axis limits
+                # scaled_throughputs = (throughputs * (y_max - y_min)) + y_min
+                scaled_throughputs = (throughputs * y_max)
+                
+                # Plot throughput curve with a unique color from the colormap
+                color = colormap(i / len(throughput_files))
+                line, = self.ax.plot(wavelengths, scaled_throughputs, color=color, linestyle='-')
+                self.filter_lines.append(line)  # Store the line for later removal
+                
+                # Place text label at the peak of each throughput curve
+                peak_index = np.argmax(scaled_throughputs)
+                peak_wavelength = wavelengths[peak_index]
+                peak_throughput = scaled_throughputs[peak_index]
+                label = self.ax.text(peak_wavelength, peak_throughput, filter_name, color=color, ha='center', va='bottom')
+                self.filter_labels.append(label)  # Store the label for later removal
+
+        # Reset x-axis limits after toggling bands
+        self.ax.set_xlim(x_lower_bound, x_upper_bound)
+        self.fig.canvas.draw_idle()  # Redraw the figure to update the display
+        self.show_filters = not self.show_filters  # Toggle the state
+
+    def toggle_instrument_bands(self, index):
+        """Toggle the display of instrument bands on the plot."""
+        # Ensure x-axis limits are correctly defined as floats
+        x_limits = self.ax.get_xlim()
+        x_lower_bound = float(x_limits[0])
+        x_upper_bound = float(x_limits[1])
+
+        if self.show_bands:
+            self.clear_band_areas()
+        else:
+            self.add_band_area(index)
+
+        # Reset x-axis limits after toggling bands
+        self.ax.set_xlim(x_lower_bound, x_upper_bound)
+        self.fig.canvas.draw_idle()  # Redraw the figure to update the display
+        self.show_bands = not self.show_bands  # Toggle the state
+
+    def clear_band_areas(self):
+        """Remove existing band areas and labels from the plot."""
+        for area in self.band_areas:
+            area.remove()  # Remove the filled area from the plot
+        for label in self.band_labels:
+            label.remove()  # Remove the label from the plot
+        self.band_areas.clear()  # Clear the list of band areas
+        self.band_labels.clear()
+
+    def add_band_area(self, index):
+        """Add a band area to the plot based on the provided index."""
+        band_range = self.band_ranges[index]
+        band_id = band_range[0]
+        start = float(band_range[1])  # Ensure type consistency
+        end = float(band_range[2])
+        
+        band_area = self.ax.axvspan(start, end, color='orange', alpha=0.3)
+        band_label = self.ax.text(start, 0, f'{band_id} {start}-{end}',
+                                   rotation=90, verticalalignment='bottom', color='orange', fontsize=8)
+        self.band_areas.append(band_area)  # Store the area for later removal
+        self.band_labels.append(band_label)
+
+        # Check if the area is within the x-limits
+        if start < self.x_lower_bound or end > self.x_upper_bound:
+            print("Warning: Band area exceeds x-limits.")
+
+    def plot_redshift_gaussian(self, fit):
+        left_bound, right_bound = fit['bounds']
+        x = np.linspace(left_bound, right_bound, 100)
+        print(f"Amplitude: {fit['amp']}, Mean: {fit['mean']}, Sigma: {fit['stddev']}")  # Debug print
+
+        gaussian_curve = fit['amp'] * np.exp(-0.5 * ((x - fit['mean']) / fit['stddev']) ** 2)
+        _, a, b = self.get_existing_continuum(left_bound, right_bound)
+        existing_continuum = self.continuum_model(x, a, b) # Make continuum with same dimensions as gaussian curve
+        if hasattr(self, 'current_gaussian_plot') and self.current_gaussian_plot:
+            self.current_gaussian_plot.remove() # Remove any previous plot of the selected gaussian
+        self.current_gaussian_plot = self.ax.plot(x, gaussian_curve+existing_continuum, color='lime', linestyle='-', linewidth=2)[0]  # Store the first element (line object)
+        plt.draw()  # Refresh the plot
+
+    def plot_redshift_voigt(self, fit):
+        left_bound, right_bound = fit['bounds']
+        x = np.linspace(left_bound, right_bound, 100)
+        
+        # Retrieve Voigt parameters
+        amp = fit['amp']
+        center = fit['center']
+        gamma = fit['gamma']
+        sigma = fit['sigma']
+        print(f"Amplitude: {amp}, Center: {center}, Sigma: {sigma}, Gamma: {gamma}")
+
+        voigt_curve = self.voigt(x, amp, center, sigma, gamma)
+        _, a, b = self.get_existing_continuum(left_bound, right_bound)
+        existing_continuum = self.continuum_model(x, a, b)
+        if hasattr(self, 'current_voigt_plot') and self.current_voigt_plot:
+            self.current_voigt_plot.remove()
+        self.current_voigt_plot = self.ax.plot(x, voigt_curve + existing_continuum, color='lime', linestyle='-', linewidth=2)[0]
+        plt.draw()  # Refresh the plot to show the updated Voigt profile
+
+    def display_linelist(self):
+        # Apply initial redshift and plot vertical lines with labels
+        shifted_wavelengths = self.line_wavelengths * (1 + self.redshift)
+        # Clear previous lines if they exist
+        self.clear_linelist()  # Ensure we clear any existing lines before displaying new ones
+        # Get current x-limits of the plot
+        xlim = self.ax.get_xlim()
+        
+        for idx, wl in enumerate(shifted_wavelengths):
+            # Check if the wavelength is within the current x-limits
+            if xlim[0] <= wl <= xlim[1]:
+                # Draw the vertical line only if it is within the current x-limits
+                line = self.ax.axvline(wl, color='#00b2f3', linestyle='--', alpha=0.7)
+                label = self.ax.text(wl, 0, f'{self.line_ids[idx]}',
+                                rotation=90, verticalalignment='bottom', color='#00b2f3', fontsize=8)
+                self.linelist_plots.append((line, label))  # Store the line and label for removal later
+            else:
+                # If the label is outside x-limits, don't add it to line_plots
+                label = None
+
+    def clear_linelist(self):
+        # Remove the vertical lines and labels
+        for line, label in self.linelist_plots:
+            line.remove()
+            label.remove()
+        self.linelist_plots = []  # Clear the list of line plots
+
+    def open_linelist_window(self):
+        line_wavelengths, line_ids = self.read_lines()  # Load line data
+        self.ll_window = LineListWindow(line_wavelengths, line_ids)
+        self.ll_window.selected_line.connect(self.estimate_redshift)  # Connect selection handler
+        self.ll_window.closed.connect(self.on_close_linelist)  # Connect the close event to remove Gaussian
+        self.ll_window.show()
+
+    def on_close_linelist(self):
+        """Remove the Gaussian plot when LineListWindow is closed."""
+        if self.current_gaussian_plot is not None:
+            self.current_gaussian_plot.remove()
+            self.current_gaussian_plot = None
+            plt.draw()  # Refresh the plot to reflect the removal
+            self.redshift_estimation_mode = False
+            print('Exiting redshift estimation mode.')
+        elif self.current_voigt_plot is not None:
+            self.current_voigt_plot.remove()
+            self.current_voigt_plot = None
+            plt.draw()  # Refresh the plot to reflect the removal
+            self.redshift_estimation_mode = False
+            print('Exiting redshift estimation mode.')
+        
+    def estimate_redshift(self, selected_id, selected_wavelength):
+        self.selected_id, self.selected_rest_wavelength = selected_id, selected_wavelength  # Store the selected wavelength
+        if self.selected_id is not None and self.selected_rest_wavelength is not None:
+            est_redshift = (self.center_profile - self.selected_rest_wavelength) / self.selected_rest_wavelength
+            est_redshift_err = self.center_profile_err / self.selected_rest_wavelength
+            print(f"Estimated Redshift: {est_redshift:.6f}+-{est_redshift_err:.6f}")
+            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            data = {
+                'z': [est_redshift],
+                'z_err': [est_redshift_err],
+                'line_id': [self.selected_id],
+                'lambda_rest': [self.selected_rest_wavelength],
+                'lambda_obs': [self.center_profile],
+                'lambda_obs_err': [self.center_profile_err],
+                'timestamp': [timestamp]
+            }
+            df = pd.DataFrame(data)
+            filename = f"z_{est_redshift:.3f}_from{self.selected_rest_wavelength:.2f}_{timestamp}.csv"
+            df.to_csv(filename, sep='\t', index=False, float_format='%.6f')
+        else:
+            print("No line selected.")
+
+    def select_line_from_list():
+        """
+        Opens the line list window and returns the selected line's ID and wavelength.
+
+        Returns:
+            line_id (str): The ID of the selected line.
+            line_wavelength (float): The wavelength of the selected line.
+        """
+        # Open the line list selection window
+        linelist_window = self.open_linelist_window()
+
+    def receive_voigt(self, selected_line_id, selected_wavelength):
+        # Assign the selected line ID and wavelength to the selected Gaussian or Voigt profile
+        self.selected_line_id = selected_line_id
+        self.selected_line_wavelength = selected_wavelength
+        print(f"Assigned line ID '{selected_line_id}' with wavelength {selected_wavelength} Å to profile.")
+        left_bound, right_bound = self.current_bounds
+        # Store bounds for component
+        comp_x = self.x_data[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
+        comp_y = self.spec[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
+
+        # Use existing continuum if available, otherwise fit new continuum
+        existing_continuum, _, _ = self.get_existing_continuum(left_bound, right_bound)
+        continuum_subtracted_y = comp_y - existing_continuum
+
+        # Calculate distance from first line - to be used for relative wavelength constraint
+        if self.voigt_comps:  # If this is not the first component
+            distance = (selected_wavelength - self.voigt_comps[0]['line_wavelength']) * (1 + self.redshift) # Take the redshift into account when calculating the wavelength separation of the lines
+        else:
+            distance = 0
+
+        # Get oscillator strength
+        # Find the index where self.osc_id matches line_id and save this index to variable osc_idx
+        osc_idx = [i for i, x in enumerate(self.osc_ids) if x == self.selected_line_id]
+        if len(osc_idx) != 1:
+            print("WARNING: The line list does not contain oscillator strengths for the line",self.selected_line_id)
+        # Get the oscillator strength from self.osc_strength by getting self.osc_strength[osc_idx]
+        osc_strength = self.osc_strengths[osc_idx][0]
+
+        # Store parameters for each fit
+        self.voigt_comps.append({
+            'line_id': self.selected_line_id,
+            'line_wavelength': self.selected_line_wavelength,
+            'osc_strength': osc_strength,
+            'distance': distance,
+            'bounds': (left_bound, right_bound),
+            'comp_id': len(self.voigt_comps) + 1,
+            'comp_x': comp_x,
+            'comp_y': comp_y,
+            'existing_continuum': existing_continuum,
+            'continuum_subtracted_y': continuum_subtracted_y
+        })
+
+    def receive_gaussian(self, selected_line_id, selected_wavelength):
+        # Assign the selected line ID and wavelength to the selected Gaussian or Voigt profile
+        self.selected_line_id = selected_line_id
+        self.selected_line_wavelength = selected_wavelength
+        print(f"Assigned line ID '{selected_line_id}' with wavelength {selected_wavelength} Å to profile.")
+        left_bound, right_bound = self.current_bounds
+        # Store bounds for component
+        comp_x = self.x_data[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
+        comp_y = self.spec[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
+
+        # Use existing continuum if available, otherwise fit new continuum
+        existing_continuum, _, _ = self.get_existing_continuum(left_bound, right_bound)
+        continuum_subtracted_y = comp_y - existing_continuum
+
+        # Calculate distance from first line - to be used for relative wavelength constraint
+        if self.gaussian_comps:  # If this is not the first component
+            distance = (selected_wavelength - self.gaussian_comps[0]['line_wavelength']) * (1 + self.redshift) # Take the redshift into account when calculating the wavelength separation of the lines
+        else:
+            distance = 0
+
+        # Get oscillator strength
+        # Find the index where self.osc_id matches line_id and save this index to variable osc_idx
+        osc_idx = [i for i, x in enumerate(self.osc_ids) if x == self.selected_line_id]
+        if len(osc_idx) != 1:
+            print("WARNING: The line list does not contain oscillator strengths for the line",self.selected_line_id)
+        # Get the oscillator strength from self.osc_strength by getting self.osc_strength[osc_idx]
+        osc_strength = self.osc_strengths[osc_idx][0]
+
+        # Store parameters for each fit
+        self.gaussian_comps.append({
+            'line_id': self.selected_line_id,
+            'line_wavelength': self.selected_line_wavelength,
+            'osc_strength': osc_strength,
+            'distance': distance,
+            'bounds': (left_bound, right_bound),
+            'comp_id': len(self.gaussian_comps) + 1,
+            'comp_x': comp_x,
+            'comp_y': comp_y,
+            'existing_continuum': existing_continuum,
+            'continuum_subtracted_y': continuum_subtracted_y
+        })
+
+    # Define a callback for when a line is selected
+    def on_line_selected(line_id, line_wavelength):
+        """
+        Callback to handle the line selection from the line list window.
+        Sets the selected line ID and wavelength and closes the window.
+        """
+        selected_line_id = line_id
+        selected_line_wavelength = line_wavelength
+        linelist_window.destroy()  # Close the line list window once a selection is made
+
+        # Variables to store the selected line's ID and wavelength
+        selected_line_id, selected_line_wavelength = None, None
+
+        # Bind the selection event to the callback
+        linelist_window.bind("<LineSelect>", lambda event: on_line_selected(event.line_id, event.line_wavelength))
+
+        # Wait for the window to close before returning the selected values
+        linelist_window.wait_window()
+
+        return selected_line_id, selected_line_wavelength
+
+    def plot_marker_and_label(self, profile_type, center_or_mean, line_id, bounds):
+        # Get current y-axis limits and calculate the y-position at 3/4 of the plot height
+        x_min, x_max = self.ax.get_xlim()
+        y_min, y_max = self.ax.get_ylim()
+        x_pos_add = (x_max - x_min) * 0.02
+        y_pos = y_min + 0.925 * (y_max - y_min)
+        
+        # Determine the marker color based on profile type
+        marker_color = '#eca829' if profile_type == 'Voigt' else 'red'
+        
+        # Draw a vertical line as a marker at the specified position
+        marker, = self.ax.plot(
+            [center_or_mean, center_or_mean],
+            [y_pos, y_pos + 0.05 * (y_max - y_min)],
+            color=marker_color,
+            lw=2
+        )
+        # Attach the bounds to the marker as a custom attribute
+        setattr(marker, 'bounds', bounds)
+        setattr(marker, 'center', center_or_mean)
+        self.markers.append(marker)  # Append marker to the list
+        
+        # Add a vertically oriented textbox for the line ID
+        label = self.ax.text(
+            center_or_mean + x_pos_add, y_pos - 0.10 * (y_max - y_min),
+            line_id,
+            color=marker_color,
+            verticalalignment='center',
+            horizontalalignment='center',
+            rotation='vertical',
+            # bbox=dict(facecolor='white', edgecolor=marker_color, boxstyle='round,pad=0.3')
+        )
+        # Attach the bounds to the label as a custom attribute
+        setattr(label, 'bounds', bounds)
+        setattr(label, 'center', center_or_mean)
+        self.labels.append(label)  # Append label to the list
+        
+        # Redraw plot to ensure the new marker and label are visible
+        plt.draw()
+
+    def assign_line_to_fit(self, selected_line_id, selected_wavelength):
+        # Assign the selected line ID and wavelength to the selected Gaussian or Voigt profile
+        if self.selected_gaussian:
+            self.selected_gaussian['line_id'] = selected_line_id
+            self.selected_gaussian['line_wavelength'] = selected_wavelength
+            print(f"Assigned line ID '{selected_line_id}' with wavelength {selected_wavelength} Å to Gaussian.")
+        if self.selected_voigt:
+            self.selected_voigt['line_id'] = selected_line_id
+            self.selected_voigt['line_wavelength'] = selected_wavelength
+            print(f"Assigned line ID '{selected_line_id}' with wavelength {selected_wavelength} Å to Voigt.")
+        
+        # Plot and store the marker and label for the assigned line
+        selected_profile = self.selected_gaussian if self.selected_gaussian else self.selected_voigt
+        profile_type = 'Gaussian' if self.selected_gaussian else 'Voigt'
+        center_or_mean = selected_profile['mean'] if self.selected_gaussian else selected_profile['center']
+        bounds = selected_profile['bounds']
+        line_id = selected_profile['line_id']
+        self.plot_marker_and_label(profile_type, center_or_mean, line_id, bounds)
+        
+        # Clear selection references
+        self.selected_gaussian = None
+        self.selected_voigt = None
+
+    def update_marker_and_label_positions(self):
+        # Get the updated y-axis limits
+        x_min, x_max = self.ax.get_xlim()
+        y_min, y_max = self.ax.get_ylim()
+        x_pos_add = (x_max - x_min) * 0.02
+        y_pos = y_min + 0.925 * (y_max - y_min)  # Calculate new y position at 3/4 of the range
+
+        # Update the y positions of each marker and label in the lists
+        for marker in self.markers:
+            x = getattr(marker, 'center')  # x position remains the same
+            marker.set_ydata([y_pos, y_pos + 0.05 * (y_max - y_min)])  # Update y-data range for the marker
+
+        for label in self.labels:
+            x = getattr(label, 'center')  # x position remains the same
+            label.set_position((x + x_pos_add, y_pos - 0.10 * (y_max - y_min)))  # Update y position of the label
+
+        # Redraw plot to reflect the changes
+        plt.draw()
+
+    # Define a residuals function for lmfit.Minimizer
+    def voigt_residuals(self, params, x_data, y_data, bound_pairs):
+        model_total = np.zeros_like(x_data)
+        
+        # Loop through each Voigt component based on the bounds provided
+        for idx, (left_bound, right_bound) in enumerate(bound_pairs):
+            prefix = f"p{idx + 1}_"
+            
+            # Retrieve the component's parameters from params with the prefix
+            amp = params[f"{prefix}amp"]
+            center = params[f"{prefix}center"]
+            sigma = params[f"{prefix}sigma"]
+            gamma = params[f"{prefix}gamma"]
+            
+            # Apply bounds to get x and y data within the component’s range
+            mask = (x_data >= left_bound) & (x_data <= right_bound)
+            x_comp = x_data[mask]
+            
+            # Calculate the Voigt model values for this component
+            y_model = self.voigt(x_comp, amp, center, sigma, gamma)
+            
+            # Add to the total model within the component’s range
+            model_total[mask] += y_model
+        
+        # Calculate residuals
+        return model_total - y_data
+
+    # Main function to perform the fit
+    def fit_voigt_profiles(self, x_data, y_data, bound_pairs):
+        params = lmfit.Parameters()
+        
+        # Set up parameters for each Voigt profile component
+        for idx, (left_bound, right_bound) in enumerate(bound_pairs):
+            prefix = f"p{idx + 1}_"
+            
+            # Prepare data for fitting within the current bound
+            comp_x = x_data[(x_data >= left_bound) & (x_data <= right_bound)]
+            comp_y = y_data[(x_data >= left_bound) & (x_data <= right_bound)]
+            
+            # Define initial parameters for each Voigt profile component
+            initial_amp = max(comp_y) - min(comp_y)
+            initial_center = np.mean(comp_x)
+            initial_sigma = np.std(comp_x) / 10
+            initial_gamma = np.std(comp_x) / 10
+
+            # Add parameters with unique prefixes
+            params.add(f'{prefix}amp', value=initial_amp, min=0)
+            params.add(f'{prefix}center', value=initial_center, min=min(comp_x), max=max(comp_x))
+            params.add(f'{prefix}sigma', value=initial_sigma, min=0)
+            params.add(f'{prefix}gamma', value=initial_gamma, min=0)
+        
+        # Initialize the Minimizer with the residuals function
+        minimizer = lmfit.Minimizer(self.voigt_residuals, params, fcn_args=(x_data, y_data, bound_pairs))
+        
+        # Perform the minimization
+        result = minimizer.minimize()
+        print(result)
+        
+        # Access and print the confidence intervals for each parameter
+        for idx, (left_bound, right_bound) in enumerate(bound_pairs):
+            prefix = f"p{idx + 1}_"
+        
+        return result
+
+    def column_density(self, flux_continuum, flux_line, f, lam, velocities):
+        from scipy.integrate import simps
+        c_in_km_per_s = 2.9979246e5 # Speed of light in km/s
+        pie2_mec = 2.654e-15 # pi * e^2 / m_e * c (in cgs units)
+        log_flux_ratio = np.log(flux_continuum / flux_line)
+        integrated_flux = simps(log_flux_ratio, velocities)
+        col_dens = (1 / (pie2_mec * f * lam)) * integrated_flux
+        return col_dens # cm^{-2}
+
+    def T_eff(self, b, m):
+        k_in_km2_g_per_K_s2 = 1.380649e-26
+        T_eff = b**2 * m / (2 * k_in_km2_g_per_K_s2)
+        return T_eff
+
+    def prompt_mask_ranges(self):
+        print("Mask mode activated: press SPACE to select bounds to mask out regions.")
+        print("Press RETURN when done masking.")
+        self.mask_bounds = []
+        self.mask_bound_lines = []
+        self.mask_mode = True
+        self.mask_temp = []  # Temporarily hold one pair
+        self.mask_patches = []
+
+        self.fig.canvas.mpl_connect('key_press_event', self.on_mask_keypress)
+
+    def on_mask_keypress(self, event):
+        if not self.mask_mode:
+            return
+
+        if event.key == ' ':
+            if event.xdata is None:
+                print("Click inside the plot area to define a mask region.")
+                return
+
+            if len(self.mask_temp) == 0 or self.mask_temp[-1][1] is not None:
+                # Start a new mask region
+                self.mask_temp.append([event.xdata, None])
+
+                # Draw vertical line to indicate start
+                line = self.ax.axvline(event.xdata, color='gray', linestyle='--')
+                self.mask_bound_lines.append(line)
+                self.fig.canvas.draw()
+
+                print(f"Mask region start defined at: {event.xdata:.2f}. Press space again to set end.")
+            else:
+                # Complete the current region
+                self.mask_temp[-1][1] = event.xdata
+                line = self.ax.axvline(event.xdata, color='gray', linestyle='--')
+                self.mask_bound_lines.append(line)
+                self.fig.canvas.draw()
+                x0, x1 = sorted(self.mask_temp[-1])
+                left, right = self.bayes_bounds
+
+                if x0 in self.bayes_bounds or x1 in self.bayes_bounds:
+                    print("Skipping region that matches Bayesian fit bounds.")
+                else:
+                    self.mask_bounds.append((x0, x1))
+                    patch = self.ax.axvspan(x0, x1, color='gray', alpha=0.3)
+                    self.mask_patches.append({'patch': patch, 'bounds': (x0, x1)})
+                    self.fig.canvas.draw()
+
+                print(f"Mask region end defined at: {event.xdata:.2f}. Region: [{x0:.2f}, {x1:.2f}].")
+
+        elif event.key == 'enter':
+            self.mask_mode = False
+            print(f"Finalized {len(self.mask_bounds)} mask regions.")
+
+            # Apply the mask and continue
+            mask_full = np.ones_like(self.wav, dtype=bool)
+            for x0, x1 in self.mask_bounds:
+                mask_full &= ~((self.wav > x0) & (self.wav < x1))
+
+            left, right = self.bayes_bounds
+            in_bounds = (self.wav > left) & (self.wav < right)
+            final_mask = mask_full & in_bounds
+
+            x = self.wav[final_mask]
+            y = self.spec[final_mask]
+            yerr = self.err[final_mask] if hasattr(self, "err") else np.ones_like(y) * np.std(y)
+
+            _, _, _, poly_order, poly_guess = self._bayes_fit_args
+            self.prompt_gaussian_selection(x, y, yerr, poly_order, poly_guess)
+
+
+
+    # MCMC Bayesian Posterior Functionality
+    def prompt_bayes_fit(self):
+        left, right = self.bayes_bounds
+        mask = (self.wav > left) & (self.wav < right)
+        x = self.wav[mask]
+        y = self.spec[mask]
+        yerr = self.err[mask]# if hasattr(self, "err") else np.ones_like(y) * np.std(y) 
+
+        # Ask user for polynomial order
+        poly_order = int(input("Enter polynomial order for continuum: "))
+
+        # Get initial polynomial guess from existing continuum
+        _, slope, intercept = self.get_existing_continuum(left, right)
+        if poly_order == 1:
+            poly_guess = [slope, intercept] # Guess for order 1
+        else:
+            poly_guess = [0.0] * (poly_order + 1)  # Initialize all coefficients to 0
+            poly_guess[-1] = np.mean(y)      # Set the intercept
+
+        # Ask user for mask region(s)
+        user_input = input("Do you want to mask out any regions before fitting? (y/n): ")
+        if user_input == 'y':
+            print("Click and press spacebar to define mask region(s), then press enter to finalize.")
+            # Store inputs and delay fitting until after masking
+            self._bayes_fit_args = (x, y, yerr, poly_order, poly_guess)
+            self.prompt_mask_ranges()
+            return  # Exit early — wait for user to finish masking
+        else:
+            # Proceed directly to Gaussian selection and fitting
+            self.prompt_gaussian_selection(x, y, yerr, poly_order, poly_guess)
+
+    def prompt_gaussian_selection(self, x, y, yerr, poly_order, poly_guess):
+        user_choice = input("Do you want to enter a manual Gaussian guess? (y/n): ").strip().lower()
+        if user_choice == 'y':
+            while True:
+                try:
+                    mean = float(input("Enter central wavelength (mean): "))
+                    sigma = float(input("Enter sigma (stddev): "))
+                    amp = float(input("Enter amplitude: "))
+                except ValueError:
+                    print("Invalid input. Try again.")
+                    continue
+
+                # Plot the manual Gaussian guess
+                # Compute Gaussian guess using self.wav
+                gauss_full = amp * np.exp(-(self.wav - mean)**2 / (2 * sigma**2))
+
+                # Apply bounds
+                left, right = self.bayes_bounds
+                in_bounds = (self.wav > left) & (self.wav < right)
+
+                # Apply mask only if defined
+                if hasattr(self, 'mask_bounds') and self.mask_bounds:
+                    mask_full = np.ones_like(self.wav, dtype=bool)
+                    for x0, x1 in self.mask_bounds:
+                        mask_full &= ~((self.wav > x0) & (self.wav < x1))
+                    final_mask = mask_full & in_bounds
+                else:
+                    final_mask = in_bounds
+
+                    left, right = self.bayes_bounds
+                in_bounds = (self.wav > left) & (self.wav < right)
+                final_mask = mask_full & in_bounds
+
+                # Use masked data for plotting
+                x_plot = self.wav[final_mask]
+                gauss_plot = gauss_full[final_mask]
+                continuum_, slope, intercept = self.get_existing_continuum(left, right)
+                continuum_full = self.continuum_model(self.wav, slope, intercept)
+                continuum_plot = continuum_full[final_mask]
+
+                # Back to plot
+                temp_line, = self.ax.plot(x_plot, gauss_plot + continuum_plot, color='lightcoral')
+                self.fig.canvas.draw()
+                plt.pause(0.001)
+
+                confirm = input("Proceed with this manual guess? (y/n, or 'q' to cancel): ").strip().lower()
+                if confirm == 'y':
+                    gauss_guess = [amp, mean, sigma]
+                    self.run_bayes_fit(x, y, yerr, poly_order, gauss_guess, poly_guess)
+                    return
+                elif confirm == 'q':
+                    print("Manual input cancelled. Returning to click-based selection.")
+                    temp_line.remove()
+                    self.fig.canvas.draw()
+                    break
+                else:
+                    print("Manual guess discarded. Please enter a new guess.")
+                    temp_line.remove()
+                    self.fig.canvas.draw()
+        elif user_choice == 'n':
+            print("Click on a known Gaussian profile within the bounds to select as an initial guess.")
+        else:
+            raise ValueError("Invalid input. Please enter 'y' or 'n'.")
+
+        def on_click(event):
+            x_pos = event.xdata
+            for fit in self.gaussian_fits:
+                l, r = fit['bounds']
+                if l <= x_pos <= r:
+                    print(f"Selected Gaussian: amp={fit['amp']}, mean={fit['mean']}, stddev={fit['stddev']}")
+                    gauss_guess = [fit['amp'], fit['mean'], fit['stddev']]
+                    self.fig.canvas.mpl_disconnect(cid)
+                    self.run_bayes_fit(x, y, yerr, poly_order, gauss_guess, poly_guess)
+                    for line in self.bayes_bound_lines:
+                        line.remove()
+                    self.bayes_bound_lines.clear()
+                    self.mask_bound_lines.clear()
+                    return
+            print("No Gaussian found at clicked location.")
+
+        cid = self.fig.canvas.mpl_connect('button_press_event', on_click)
+
+    def run_bayes_fit(self, x, y, yerr, poly_order, gauss_guess, poly_guess):
+        from datetime import datetime
+        import emcee
+        import corner
+
+        def calculate_ew(x, model_flux, continuum_flux):
+            """
+            Calculate the Equivalent Width (EW) for a given model flux and continuum flux.
+            EW = integral (1 - model_flux / continuum_flux) dx
+            """
+            continuum_flux = np.maximum(continuum_flux, 1e-10) # Ensure continuum flux is non-zero to avoid division by zero
+            flux_diff = 1 - (model_flux / continuum_flux)
+            # Compute the equivalent width by integrating over the wavelength range
+            ew = np.trapz(flux_diff, x)
+            return ew
+
+        def model(x, amp, mu, sigma, *poly_coeffs):
+            return amp * np.exp(-(x - mu)**2 / (2 * sigma**2)) + np.polyval(poly_coeffs, x)
+
+        def log_likelihood(theta, x, y, yerr):
+            amp, mu, sigma = theta[:3]
+            poly = theta[3:]
+            model_y = model(x, amp, mu, sigma, *poly)
+            return -0.5 * np.sum(((y - model_y) / yerr) ** 2)
+
+        def log_prior(theta):
+            amp, mu, sigma = theta[:3]
+            if not (-1e3 < amp < 1e3 and 0 < sigma < 100 and np.isfinite(mu)):
+                return -np.inf
+            return 0.0
+
+        def log_prob(theta, x, y, yerr):
+            lp = log_prior(theta)
+            if not np.isfinite(lp):
+                return -np.inf
+            return lp + log_likelihood(theta, x, y, yerr)
+
+        # Mask?
+        if self.mask_bounds:
+            mask = np.ones_like(x, dtype=bool)
+            for x0, x1 in self.mask_bounds:
+                mask &= ~((x >= x0) & (x <= x1))
+            x = x[mask]
+            y = y[mask]
+            yerr = yerr[mask]
+
+        # Initial setup
+        initial = gauss_guess + poly_guess
+        ndim = len(initial)
+        nwalkers = 50
+        nsteps = 2000
+        pos = initial + 1e-4 * np.random.randn(nwalkers, ndim)
+
+        sampler = emcee.EnsembleSampler(nwalkers, ndim, log_prob, args=(x, y, yerr))
+        print("Running MCMC...")
+        sampler.run_mcmc(pos, nsteps, progress=True)
+        samples = sampler.get_chain(discard=int(0.2 * nsteps), flat=True)
+
+        # Output
+        mean_params = np.mean(samples, axis=0)
+        amp, mu, sigma = mean_params[:3]
+        poly = mean_params[3:]
+        gauss = amp * np.exp(-(x - mu)**2 / (2 * sigma**2))
+        poly_y = np.polyval(poly, x)
+        total = gauss + poly_y
+        # Chi2
+        residuals = y - total
+        chi2 = np.sum((residuals / yerr)**2)
+        num_params = len(initial)
+        dof = len(y) - num_params  # replace num_params with your model's number of free parameters
+        chi2_nu = chi2 / dof
+
+        now = datetime.now().strftime("%m-%d-%y_%H-%M-%S")
+        fname = f"bayes_{now}.txt"
+        with open(fname, 'w') as f:
+            f.write("# MCMC Posterior Means:\n")
+            f.write(f"Amplitude: {amp:.4f}\nMean: {mu:.4f}\nSigma: {sigma:.4f}\n")
+            f.write(f"Polynomial Coefficients: {poly.tolist()}\n")
+            f.write(f"Chi2: {chi2:.4e}\n")
+            f.write(f"Chi2_nu: {chi2_nu:.4e}\n")
+            f.write("\n# Wavelength  TotalFit  Gaussian  Continuum\n")
+            for xi, ti, gi, pi in zip(x, total, gauss, poly_y):
+                f.write(f"{xi:.6f}  {ti:.6f}  {gi:.6f}  {pi:.6f}\n")
+            print(f"Fit saved as {fname}.")
+
+        # Print chi2 to terminal
+        print(f"Chi2: {chi2:.4e}")
+        print(f"Chi2_nu: {chi2_nu:.4e}\n")
+
+        # Calculate equivalent width for each sample
+        ew_samples = []
+        for sample in samples:
+            amp, mu, sigma = sample[:3]
+            poly_coeffs = sample[3:]
+            
+            # Recompute the Gaussian and the total model for each sample
+            gauss_sample = amp * np.exp(-(x - mu)**2 / (2 * sigma**2))
+            total_sample = gauss_sample + np.polyval(poly_coeffs, x)
+
+            # Calculate the EW for the Gaussian and total model
+            ew_gauss = calculate_ew(x, gauss_sample, poly_y)  # Gaussian EW
+            ew_total = calculate_ew(x, total_sample, poly_y)  # Total model EW
+            
+            ew_samples.append((ew_gauss, ew_total))
+
+        ew_samples = np.array(ew_samples)
+        
+        # Calculate the 2-sigma confidence intervals (16th, 50th, and 84th percentiles)
+        ew_gauss_16th = np.percentile(ew_samples[:, 0], 16)
+        ew_gauss_50th = np.percentile(ew_samples[:, 0], 50)
+        ew_gauss_84th = np.percentile(ew_samples[:, 0], 84)
+        # Rest EW
+        z = self.redshift
+        ew_gauss_50th_rest   = ew_gauss_50th / (1 + z)
+        ew_gauss_16th_rest   = ew_gauss_16th / (1 + z)
+        ew_gauss_84th_rest   = ew_gauss_84th / (1 + z)
+        
+        ew_total_16th = np.percentile(ew_samples[:, 1], 16)
+        ew_total_50th = np.percentile(ew_samples[:, 1], 50)
+        ew_total_84th = np.percentile(ew_samples[:, 1], 84)
+        # Rest EW
+        ew_total_50th_rest   = ew_total_50th / (1 + z)
+        ew_total_16th_rest   = ew_total_16th / (1 + z)
+        ew_total_84th_rest   = ew_total_84th / (1 + z)
+
+        print(f"Gaussian EW 2σ confidence interval (obs): [{ew_gauss_16th:.4f}, {ew_gauss_50th:.4f}, {ew_gauss_84th:.4f}]")
+        print(f"Total EW 2σ confidence interval (obs): [{ew_total_16th:.4f}, {ew_total_50th:.4f}, {ew_total_84th:.4f}]")
+        print(f"Gaussian EW 2σ confidence interval (rest): [{ew_gauss_16th_rest:.4f}, {ew_gauss_50th_rest:.4f}, {ew_gauss_84th_rest:.4f}]")
+        print(f"Total EW 2σ confidence interval (rest): [{ew_total_16th_rest:.4f}, {ew_total_50th_rest:.4f}, {ew_total_84th_rest:.4f}]")
+
+        # Error bars
+        ew_gauss_lo = ew_gauss_50th - ew_gauss_16th
+        ew_gauss_hi = ew_gauss_84th - ew_gauss_50th
+
+        ew_total_lo = ew_total_50th - ew_total_16th
+        ew_total_hi = ew_total_84th - ew_total_50th
+        print(f"Gaussian EW: {ew_gauss_50th:.4f} (+{ew_gauss_hi:.4f} / -{ew_gauss_lo:.4f})")
+        print(f"Total EW: {ew_total_50th:.4f} (+{ew_total_hi:.4f} / -{ew_total_lo:.4f})")
+
+        # More restframe EW calculations
+        ew_gauss_50th_rest = ew_gauss_50th / (1 + z)
+        ew_gauss_lo_rest   = (ew_gauss_50th - ew_gauss_16th) / (1 + z)
+        ew_gauss_hi_rest   = (ew_gauss_84th - ew_gauss_50th) / (1 + z)
+
+        ew_total_50th_rest = ew_total_50th / (1 + z)
+        ew_total_lo_rest   = (ew_total_50th - ew_total_16th) / (1 + z)
+        ew_total_hi_rest   = (ew_total_84th - ew_total_50th) / (1 + z)
+        print(f"Gaussian Rest-frame EW: {ew_gauss_50th_rest:.4f} (+{ew_gauss_hi_rest:.4f} / -{ew_gauss_lo_rest:.4f})")
+        print(f"Total Rest-frame EW: {ew_total_50th_rest:.4f} (+{ew_total_hi_rest:.4f} / -{ew_total_lo_rest:.4f})")
+
+        # Optionally save results to file
+        now = datetime.now().strftime("%m-%d-%y_%H-%M-%S")
+        fname = f"bayes_{now}_ew.txt"
+        with open(fname, 'w') as f:
+            f.write("# Equivalent Width Posterior Medians (Observed and Rest-frame)\n")
+            f.write("Type,Frame,16th,50th,84th\n")
+            f.write(f"Gaussian,Observed,{ew_gauss_16th:.4f},{ew_gauss_50th:.4f},{ew_gauss_84th:.4f}\n")
+            f.write(f"Total,Observed,{ew_total_16th:.4f},{ew_total_50th:.4f},{ew_total_84th:.4f}\n")
+            f.write(f"Gaussian,Rest-frame,{ew_gauss_16th_rest:.4f},{ew_gauss_50th_rest:.4f},{ew_gauss_84th_rest:.4f}\n")
+            f.write(f"Total,Rest-frame,{ew_total_16th_rest:.4f},{ew_total_50th_rest:.4f},{ew_total_84th_rest:.4f}\n")
+
+        print(f"MCMC fit complete. Results written to {fname}.")
+
+        # Plot to see what was fitted
+        n_plot = 100
+        inds = np.random.choice(len(samples), size=n_plot, replace=False)
+        for i in inds:
+            amp_i, mu_i, sigma_i = samples[i][:3]
+            poly_i = samples[i][3:]
+            model_i = model(x, amp_i, mu_i, sigma_i, *poly_i)
+            self.ax.plot(x, model_i, color='orange', alpha=0.1, lw=0.5)
+        spec_line, = self.ax.step(x, y, color='lightblue', linestyle='-', where='mid')
+        profile_line, = self.ax.plot(x, gauss, color='lightgreen', linestyle=':')
+        poly_line, = self.ax.plot(x, poly_y, color='lightgreen', linestyle=':')
+        total_line, = self.ax.plot(x, total, color='green', linestyle=':')
+        self.fig.canvas.draw_idle()
+
+        # Dynamically construct parameter labels
+        raw_labels = []
+
+        n_gaussians = 1  # For future support of multiple Gaussians
+        for i in range(n_gaussians):
+            suffix = f"_{i+1}" if n_gaussians > 1 else ""
+            raw_labels += [f"amp{suffix}", f"mu{suffix}", f"sigma{suffix}"]
+
+        # Polynomial coefficients (highest degree first)
+        for i in reversed(range(len(poly_guess))):
+            raw_labels.append(f"coeff_{i}")
+
+        # Mapping raw parameter names to LaTeX-formatted labels
+        latex_labels = []
+        for label in raw_labels:
+            if label.startswith("amp"):
+                idx = label[3:]  # get suffix
+                latex_labels.append(rf"$A{idx}$" if idx else r"$A$")
+            elif label.startswith("mu"):
+                idx = label[2:]
+                latex_labels.append(rf"$\mu{idx}$" if idx else r"$\mu$")
+            elif label.startswith("sigma"):
+                idx = label[5:]
+                latex_labels.append(rf"$\sigma{idx}$" if idx else r"$\sigma$")
+            elif label.startswith("coeff_"):
+                degree = int(label.split("_")[1])
+                latex_labels.append(rf"$c_{{{degree}}}$")
+            else:
+                latex_labels.append(label)  # fallback
+
+        # Make corner plot
+        low_thresh, high_thresh = 1e-2, None # Thresholds for switching to scientific notation
+        # flat_samples = sampler.get_chain(discard=int(0.2 * nsteps), flat=True)
+        intervals = np.percentile(samples, [5, 16, 50, 84, 95], axis=0)
+        best_fit = intervals[2]  # 50th percentile as best fit
+        fig = corner.corner(
+            samples,
+            truths=truths if 'truths' in locals() else None,
+            show_titles=True,
+            title_fmt=".2f", # NOTE: Only the 1-sigma confidence values are shown in the title of each panel - just so you know!
+            title_kwargs={"fontsize": 12},
+            quantiles=[0.05, 0.16, 0.5, 0.84, 0.95],  # 1-sigma, 2-sigma contours
+            plot_density=True,  # Show the density contours
+            levels=[0.68, 0.95],  # 1-sigma, 2-sigma confidence levels
+            labels=latex_labels
+        )
+        # Change to only get "helpful" labels - not 0.00 +- 0.00 - so change to scientific notation
+        axes = np.array(fig.axes).reshape((ndim, ndim))
+        for i in range(ndim):
+            ax = axes[i, i]
+            mean = best_fit[i]
+            lower = best_fit[i] - intervals[1][i]  # 16th percentile
+            upper = intervals[3][i] - best_fit[i]  # 84th percentile
+            # Decide whether to use scientific notation
+            use_sci = (low_thresh is not None and abs(mean) < low_thresh) or \
+                    (high_thresh is not None and abs(mean) > high_thresh)
+            if use_sci:
+                mean_str = f"{mean:.2e}"
+                upper_str = f"{upper:.2e}"
+                lower_str = f"{lower:.2e}"
+            else:
+                mean_str = f"{mean:.2f}"
+                upper_str = f"{upper:.2f}"
+                lower_str = f"{lower:.2f}"
+            title_text = f"{mean_str}$^{{+{upper_str}}}_{{-{lower_str}}}$"
+            ax.set_title(title_text, fontsize=12)
+        # Customize
+        ndim = samples.shape[1]  # Number of parameters
+        for row in range(ndim):
+            for col in range(ndim):
+                ax_idx = row * ndim + col
+                ax = fig.axes[ax_idx]
+
+                # Get the contour collections
+                contours = ax.collections
+                for contour in contours:
+                    paths = contour.get_paths()
+                    if not paths:
+                        continue  # Skip if there are no paths
+                    y_mean = paths[0].vertices[:, 1].mean()
+                    if np.isclose(y_mean, 0.68, atol=0.01):  # 1-sigma
+                        contour.set_color('green')
+                    elif np.isclose(y_mean, 0.95, atol=0.01):  # 2-sigma
+                        contour.set_color('lightblue')
+
+                # Add vertical/horizontal lines at the mean
+                if col < ndim and row >= col:
+                    ax.axvline(intervals[2][col], color='red', linestyle='--', lw=1.5)
+                if row < ndim and row != col and row >= col:
+                    ax.axhline(intervals[2][row], color='red', linestyle='--', lw=1.5)
+
+                # Add best-fit point (only on off-diagonal plots)
+                if row != col and row > col:
+                    ax.scatter(
+                        best_fit[col], best_fit[row],
+                        color='darkred', marker='s', s=100, edgecolor='black', zorder=5
+                    )
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"corner_{timestamp}.pdf"
+        fig.subplots_adjust(hspace=0.6, wspace=0.6)
+        plt.tight_layout()
+        fig.savefig(filename, bbox_inches='tight')
+        print(f"Corner plot saved to {filename}.")
+        plt.show()
+        self.bayes_mode = False
+        print("Exiting Bayes fit mode")
+
+    # Interactive functions
+    def command_listener(self):
+        while True:
+            command = input("Enter command (type 'quit' to exit): ")
+            if command.strip().lower() == "quit":
+                print("Quitting the application...")
+                plt.close(self.fig)
+                sys.exit()
+            elif command.strip().lower() == "save":
+                self.save_current_plot()
+            else:
+                print(f"Unknown command: {command}")
+
+    def on_mouse_move(self, event):
+        # Check if the cursor is within the axes bounds
+        if event.inaxes == self.ax:
+            self.x_lower_bound, self.x_upper_bound = self.ax.get_xlim()
+            self.y_lower_bound, self.y_upper_bound = self.ax.get_ylim()
+            if not (self.x_lower_bound <= event.xdata <= self.x_upper_bound and
+                    self.y_lower_bound <= event.ydata <= self.y_upper_bound):
+                return  # Exit if the cursor is outside the plot area
+
+    def keyPressEvent(self, event):
+        self.on_key(event)
+
+    # Function for handling key events
+    def on_key(self, event):
+
+        # Check if the cursor is within the axes bounds
+        if hasattr(event, 'xdata') and hasattr(event, 'ydata'):
+            if event.xdata is not None and event.ydata is not None:
+                if not (self.x_lower_bound <= event.xdata <= self.x_upper_bound and self.y_lower_bound <= event.ydata <= self.y_upper_bound):
+                    return  # Exit if the cursor is outside the plot area
+
+        # Toggle residual panel
+        if event.key == 'r':
+            self.toggle_residual_panel()
+
+        # Toggle plot style with '~' key
+        if event.key == '~':
+            self.is_step_plot = not self.is_step_plot
+            self.step_spec.set_visible(self.is_step_plot)
+            self.line_spec.set_visible(not self.is_step_plot)
+            self.step_error.set_visible(self.is_step_plot)
+            self.line_error.set_visible(not self.is_step_plot)
+
+            # Update references to the currently visible lines
+            self.spectrum_line = self.step_spec if self.is_step_plot else self.line_spec
+            self.error_line = self.step_error if self.is_step_plot else self.line_error
+
+            plt.draw()  # Redraw to reflect changes
+            print("Plot style toggled:", "Step plot" if self.is_step_plot else "Line plot")
+
+        if event.key == 'v':  # Use 'v' key to calculate equivalent width
+            x_pos = event.xdata  # Get x position of mouse click
+
+            # Find the Gaussian fit corresponding to the selected x position
+            selected_gaussian = None
+            for fit in self.gaussian_fits:
+                left_bound, right_bound = fit['bounds']
+                if left_bound <= x_pos <= right_bound:
+                    selected_gaussian = fit
+                    print(f"Gaussian with parameters amp:{selected_gaussian['amp']}, mean: {selected_gaussian['mean']}, stddev: {selected_gaussian['stddev']} selected.")
+                    break  # Select only the first Gaussian fit found within the bounds
+
+            # OR find the Voigt fit corresponding to the selected x position
+            selected_voigt = None
+            for fit in self.voigt_fits:
+                left_bound, right_bound = fit['bounds']
+                if left_bound <= x_pos <= right_bound:
+                    selected_voigt = fit
+                    print(f"Voigt with parameters amp: {selected_voigt['amp']}, center: {selected_voigt['center']}, sigma: {selected_voigt['sigma']}, gamma: {selected_voigt['gamma']}  selected.")
+                    break  # Select only the first Gaussian fit found within the bounds
+            
+            if selected_gaussian or selected_voigt:
+                if selected_gaussian:
+                    # Get Gaussian parameters for the selected fit
+                    bounds = selected_gaussian['bounds']
+                    amp = selected_gaussian['amp']
+                    mean = selected_gaussian['mean']
+                    stddev = selected_gaussian['stddev']
+                    
+                    # Define the Gaussian function based on selected parameters
+                    gaussian_function = lambda x: self.gaussian(x, amp, mean, stddev)
+                if selected_voigt:
+                    # Get Voigt parameters for the selected fit
+                    bounds = selected_voigt['bounds']
+                    amp = selected_voigt['amp']
+                    center = selected_voigt['center']
+                    gamma = selected_voigt['gamma']
+                    sigma = selected_voigt['sigma']
+                    
+                    # Define the Voigt function based on selected parameters
+                    voigt_function = lambda x: self.voigt(x, amp, center, sigma, gamma)
+
+                # Retrieve the fitted continuum over the Gaussian's bounds
+                continuum_within_bounds = self.get_existing_continuum(bounds[0], bounds[1])
+
+                if continuum_within_bounds is not None:
+                    # Extract continuum values and parameters from returned data
+                    _, a, b = continuum_within_bounds
+
+                    # Calculate Equivalent Width
+                    if selected_gaussian:
+                        ew = self.calculate_equivalent_width(gaussian_function, (a, b), bounds)
+                        # Plot the filled area between Gaussian and continuum
+                        x_fill = np.linspace(bounds[0], bounds[1], 100)
+                        y_gaussian = gaussian_function(x_fill)
+                        y_continuum = self.continuum_model(x_fill, a, b)
+                    if selected_voigt:
+                        ew = self.calculate_equivalent_width(voigt_function, (a, b), bounds)
+                        # Plot the filled area between Gaussian and continuum
+                        x_fill = np.linspace(bounds[0], bounds[1], 100)
+                        y_gaussian = voigt_function(x_fill)
+                        y_continuum = self.continuum_model(x_fill, a, b)
+                    
+                    # Remove the previous fill region if it exists
+                    if self.ew_fill:
+                        self.ew_fill.remove()
+                    
+                    # Create a new fill region and store its reference
+                    self.ew_fill = self.ax.fill_between(x_fill, y_gaussian + y_continuum, y_continuum, color='cyan', alpha=0.7)
+                    plt.draw()  # Redraw plot to show the filled area
+                else:
+                    print("No continuum specified. Unable to calculate EW.")
+
+        if event.key == 'm':
+            self.continuum_mode = True
+            print("Continuum fitting mode: Use the spacebar to define regions.")
+
+        if event.key == 'enter' and self.continuum_mode:
+            # Combine all defined regions into a single dataset for fitting
+            combined_wav = []
+            combined_spec = []
+            combined_err = []
+
+            for region in self.continuum_regions:
+                start, end = region
+                # Find indices for the selected range
+                mask = (self.x_data >= start) & (self.x_data <= end)
+                if np.any(mask):
+                    combined_wav.extend(self.x_data[mask])
+                    combined_spec.extend(self.spec[mask])
+                    combined_err.extend(self.err[mask])
+
+            # Make combined region to define the outer x-bounds of the continuum fit
+            region_bounds = (min(region[0] for region in self.continuum_regions), max(region[1] for region in self.continuum_regions))
+
+            # Convert to numpy arrays
+            combined_wav = np.array(combined_wav)
+            combined_spec = np.array(combined_spec)
+            combined_err = np.array(combined_err)
+
+            # Fit the continuum using the combined data
+            continuum, params, perr = self.fit_continuum(combined_wav, combined_spec, combined_err)
+            a, b = params[0], params[1]
+            a_err, b_err = perr[0], perr[1]
+            print('Continuum fit - a:',a,'+-',a_err,'b:',b,'+-',b_err)
+
+            # Plot the fitted continuum and store the line object
+            continuum_line, = self.ax.plot(combined_wav, continuum, color='magenta', linestyle='--', alpha=0.8)
+            if self.is_residual_shown:
+                self.calculate_and_plot_residuals()
+            plt.legend()
+            plt.draw()
+            print("Fitting completed for defined regions.")
+            # Add continuum fit
+            continuum_fit = {
+                'bounds': region_bounds,  # Tuple (left_bound, right_bound)
+                'a': a, 'b': b,                # Parameters [a, b]
+                'a_err': a_err, 'b_err': b_err,
+                'patches': self.continuum_patches,    # The patches object is for plotting
+                'line': continuum_line,            
+                'is_velocity_mode': self.is_velocity_mode
+            }
+            self.continuum_fits.append(continuum_fit)
+            self.continuum_regions = [] # Clear continuum_regions
+            self.continuum_mode = False # Exit continuum mode
+            print('Exiting continuum mode.')
+        elif event.key == ' ' and self.continuum_mode:
+            # Capture current mouse x-coordinate for regions
+            if len(self.continuum_regions) == 0 or self.continuum_regions[-1][1] is not None:
+                # Start a new region
+                self.continuum_regions.append((event.xdata, None))  # Add start point
+                print(f"Region start defined at: {event.xdata:.2f}. Press space again to set end or enter to finalize.")
+            else:
+                # Set the end point for the last region
+                self.continuum_regions[-1] = (self.continuum_regions[-1][0], event.xdata)  # Update end point
+                print(f"Region end defined at: {event.xdata:.2f}. Press space to define another region or enter to finalize.")
+                # Plot the region as a shaded patch
+                patch = self.ax.axvspan(self.continuum_regions[-1][0], event.xdata, color='magenta', alpha=0.3, hatch='//')
+                self.continuum_patches.append({'patch': patch, 'bounds': (self.continuum_regions[-1][0], event.xdata)}) # Store the patch
+                # self.continuum_patches.append(patch) # Store the patch
+                plt.draw()  # Update plot with the new region
+        # Remove continuum region
+        if event.key == 'M':
+            # Check each continuum fit to see if the mouse is over it
+            for fit in self.continuum_fits:
+                region_bounds = fit['bounds']
+                left_bound, right_bound = region_bounds
+                if left_bound <= event.xdata <= right_bound:
+                    # Remove the fitted continuum line
+                    continuum_line = fit.get('line')  # If you store the line in the fit dictionary
+                    if continuum_line:
+                        continuum_line.remove()  # Remove the fitted continuum line
+                        print(f"Removed continuum line {continuum_line} in range: {region_bounds}")
+                    # Remove the fit from the list
+                    self.continuum_fits.remove(fit)
+                    plt.draw()  # Redraw the plot after removal
+                    break  # Exit the loop after the first match
+            for patch_info in self.continuum_patches:
+                region_bounds = patch_info['bounds']
+                left_bound, right_bound = region_bounds
+                if left_bound <= event.xdata <= right_bound:
+                    # Remove the corresponding continuum patch
+                    patch = patch_info['patch']
+                    if patch in self.ax.patches:
+                        patch.remove()  # Remove the patch from the plot
+                        print(f"Removed continuum patch {patch} in range: {region_bounds}")
+                    # Remove the entry from the list of patches
+                    self.continuum_patches.remove(patch_info)
+                    plt.draw()  # Redraw the plot after removal
+                    break  # Exit the loop after the first match
+
+        # Set Gaussian bounds with space bar
+        if event.key == ' ' and (self.gaussian_mode or self.multi_gaussian_mode_old):
+            line_id = None
+            line_wavelength = None
+            # Register the bound at the current cursor position
+            self.bounds.append(event.xdata)
+            line = self.ax.axvline(event.xdata, color='red', linestyle='--')  # Plot bound line
+            self.bound_lines.append(line)  # Store the line object
+            print(f"Bound set at x = {event.xdata}")
+            plt.draw()  # Update plot with the new bound line
+
+            # If two bounds are selected, fit the Gaussian
+            if self.gaussian_mode and len(self.bounds) == 2:
+                self.gaussian_mode = False
+                left_bound, right_bound = sorted(self.bounds)
+
+                # Check for existing continuum
+                existing_continuum, _, _ = self.get_existing_continuum(left_bound, right_bound)
+                comp_x = self.x_data[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
+                comp_y = self.spec[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
+                comp_err = self.err[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
+
+                if existing_continuum is not None:
+                    # Use the existing continuum
+                    continuum_subtracted_y = comp_y - existing_continuum
+                    print("Using existing continuum for Gaussian fit.")
+
+                else:
+                    # Fit a new continuum if none exists within bounds
+                    overall_continuum, continuum_params, continuum_err = self.fit_continuum(self.x_data, self.spec, self.err)
+                    self.continuum_fits.append({'bounds': (min(self.x_data), max(self.x_data)), 'a': continuum_params[0], 'b': continuum_params[1], 'a_err': continuum_err[0], 'b_err': continuum_err[1]})
+                    overall_continuum = overall_continuum[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
+                    continuum_subtracted_y = comp_y - overall_continuum
+                    print("No existing continuum found; fitted new continuum.")
+
+                # Fit Gaussian to the continuum-subtracted data
+                if len(comp_x) > 0:
+                    if np.mean(continuum_subtracted_y) > 0:
+                        initial_guess = [max(continuum_subtracted_y) - min(continuum_subtracted_y), np.mean(comp_x), np.std(comp_x)]
+                    else:
+                        initial_guess = [min(continuum_subtracted_y) - max(continuum_subtracted_y), np.mean(comp_x), np.std(comp_x)]
+                    
+                    # --- START NEW GUESS METHOD --- #
+                    # Find peak index
+                    peak_index = np.argmax(np.abs(continuum_subtracted_y))
+                    peak_x = comp_x[peak_index]
+                    peak_y = continuum_subtracted_y[peak_index]
+
+                    # Estimate amplitude and sign
+                    amplitude_guess = peak_y
+
+                    # Estimate stddev from FWHM (rough approximation)
+                    half_max = amplitude_guess / 2.0
+                    try:
+                        # Get indices where the signal crosses half max
+                        indices_above_half = np.where(np.abs(continuum_subtracted_y) > np.abs(half_max))[0]
+                        if len(indices_above_half) >= 2:
+                            fwhm_estimate = comp_x[indices_above_half[-1]] - comp_x[indices_above_half[0]]
+                            stddev_guess = fwhm_estimate / (2 * np.sqrt(2 * np.log(2)))  # Convert FWHM to stddev
+                        else:
+                            stddev_guess = np.std(comp_x)  # Fallback
+                    except:
+                        stddev_guess = np.std(comp_x)
+
+                    # Use peak location for mean
+                    mean_guess = peak_x
+
+                    initial_guess = [amplitude_guess, mean_guess, stddev_guess]
+
+                    # --- END NEW GUESS METHOD --- #
+                    
+                    params, pcov = curve_fit(self.gaussian, comp_x, continuum_subtracted_y, sigma=comp_err, p0=initial_guess, bounds=([-np.inf, -np.inf, 0], [np.inf, np.inf, np.inf]))
+                    amp, mean, stddev = params
+                    perr = np.sqrt(np.diag(pcov))
+                    amp_err, mean_err, stddev_err = perr
+
+                    # Plot the fit and store fit info
+                    x_fit = comp_x
+                    y_fit = self.gaussian(x_fit, amp, mean, stddev) + (existing_continuum if existing_continuum is not None else overall_continuum)
+                    residuals = comp_y - y_fit
+                    chi2 = np.sum((residuals ** 2) / comp_err) # Calculate chi2
+                    chi2_nu = chi2 / (len(x_fit) - len(params))# Calculate chi2 d.o.f.
+                    interpolator = interp1d(x_fit, y_fit, kind='cubic')
+                    x_plt = np.linspace(x_fit.min(), x_fit.max(), 10 * len(x_fit))
+                    y_plt = interpolator(x_plt)
+                    fit_line, = self.ax.plot(x_plt, y_plt, color='red', linestyle='--')
+                    # Store each component’s parameters
+                    self.gaussian_fits.append({
+                    'fit_id': self.fit_id,
+                    'is_velocity_mode': self.is_velocity_mode,
+                    'chi2': chi2,
+                    'chi2_nu': chi2_nu,
+                    'component_id': self.component_id,
+                    'amp': amp, 'amp_err': amp_err, 'mean': mean, 'mean_err': mean_err, 'stddev': stddev, 'stddev_err': stddev_err,
+                    'bounds': (left_bound, right_bound),
+                    'line_id': line_id if line_id else None,
+                    'line_wavelength': line_wavelength  if line_wavelength else None,
+                    'line': fit_line,
+                    'rest_wavelength': self.rest_wavelength,
+                    'rest_id': self.rest_id,
+                    'z_sys': self.redshift
+                    })
+                    print(f"  Fit ID: {self.fit_id}")
+                    print(f"  Component ID: {self.component_id}")
+                    print(f"  Velocity mode: {self.is_velocity_mode}")
+                    print(f"  Line ID: {line_id}")
+                    print(f"  Line Wavelength: {line_wavelength}")
+                    print(f"  Amplitude: {amp}+-{amp_err}")
+                    print(f"  Mean: {mean}+-{mean_err}")
+                    print(f"  Std_dev: {stddev}+-{stddev_err}")
+                    print(f"  Bounds: ({left_bound}, {right_bound})")
+                    print(f"  Chi-squared: {chi2}")
+                    print(f"  Chi-squared_nu: {chi2_nu}")
+                    print(f"  Line Object: {fit_line}\n")
+
+                    self.component_id += 1
+                    plt.draw() 
+                    print(f"Fitted parameters: Amplitude = {amp}+-{amp_err}, Mean = {mean}+-{mean_err}, Std Dev = {stddev}+-{stddev_err}")
+
+                # Remove bound lines after fit
+                for line in self.bound_lines:
+                    line.remove()
+                self.bound_lines.clear()  # Clear the list of bound lines
+                self.bounds = []
+                self.fit_id += 1
+
+        # Perform multi-Gaussian fit if Enter is pressed in multi-Gaussian mode
+        elif self.multi_gaussian_mode_old and event.key == 'enter' and len(self.bounds) >= 4 and len(self.bounds) % 2 == 0:
+            self.multi_gaussian_mode_old = False
+            bound_pairs = [(self.bounds[i], self.bounds[i + 1]) for i in range(0, len(self.bounds), 2)]
+            comp_xs = []
+            comp_ys = []
+            comp_errs = []
+            continuum_subtracted_ys = []
+            continuum_ys = []
+            line_id = None
+            line_wavelength = None
+
+            # Prepare data for fitting multiple Gaussians, applying continuum subtraction
+            initial_guesses = []
+            for left_bound, right_bound in bound_pairs:
+                comp_x = self.x_data[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
+                comp_y = self.spec[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
+                comp_err = self.err[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
+                comp_ys.append(comp_y)
+                # self.ax.step(comp_x, comp_y, color='brown', linestyle='--') # DEBUG
+                
+                # Check for existing continuum within bounds
+                existing_continuum, _, _ = self.get_existing_continuum(left_bound, right_bound)
+                if existing_continuum is not None:
+                    # If an existing continuum is available, subtract it
+                    continuum_subtracted_y = comp_y - existing_continuum
+                    print(f"Using existing continuum for bounds {left_bound}-{right_bound}.")
+                    continuum_y = np.array(existing_continuum)
+                else:
+                    # Fit a new continuum if none exists within bounds
+                    overall_continuum, continuum_params, continuum_err = self.fit_continuum(self.x_data, self.spec, self.err)
+                    self.continuum_fits.append({'bounds': (min(self.x_data), max(self.x_data)), 'a': continuum_params[0], 'b': continuum_params[1], 'a_err': continuum_err[0], 'b_err': continuum_err[1]})
+                    overall_continuum = overall_continuum[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
+                    continuum_subtracted_y = comp_y - overall_continuum
+                    continuum_ys.append(np.array(overall_continuum))
+                    print(f"No existing continuum found; fitted new continuum for bounds {left_bound}-{right_bound}.")
+                    continuum_y = np.array(overall_continuum)
+
+                continuum_ys.append(continuum_y)
+                comp_xs.extend(comp_x)
+                comp_errs.extend(comp_err)
+                continuum_subtracted_ys.extend(continuum_subtracted_y)
+                # Add initial guesses for Gaussian fitting
+                initial_guesses.extend([max(continuum_subtracted_y) - min(continuum_subtracted_y), np.mean(comp_x), np.std(comp_x)]) # NOT SHARED SIGMA
+
+            # Fit multiple Gaussians
+            if len(comp_xs) > 0:
+                comp_xs = np.array(comp_xs)
+                continuum_subtracted_ys = np.array(continuum_subtracted_ys)
+                params, pcov = curve_fit(self.multi_gaussian, comp_xs, continuum_subtracted_ys, sigma=comp_errs, p0=initial_guesses) # NOT SHARED SIGMA
+                perr = np.sqrt(np.diag(pcov))
+                for i in range(0, len(params), 3):
+                    amp, mean, stddev = params[i:i+3]
+                    amp_err, mean_err, stddev_err = perr[i:i+3]
+                    x_fit = self.x_data[(self.x_data >= bound_pairs[i // 3][0]) & (self.x_data <= bound_pairs[i // 3][1])]
+                    y_fit = self.gaussian(x_fit, amp, mean, stddev) + continuum_ys[i // 3]
+                    residuals = continuum_subtracted_ys[i // 3] - y_fit
+                    chi2 = np.sum((residuals ** 2) / comp_errs[i // 3]) # Calculate chi2
+                    chi2_nu = chi2 / (len(x_fit) - len(params))# Calculate chi2 d.o.f.
+                    interpolator = interp1d(x_fit, y_fit, kind='cubic')
+                    x_plt = np.linspace(x_fit.min(), x_fit.max(), 10 * len(x_fit))
+                    y_plt = interpolator(x_plt)
+                    fit_line, = self.ax.plot(x_plt, y_plt, color='red', linestyle='--')
+                    left_bound, right_bound = bound_pairs[i // 3]
+                    self.gaussian_fits.append({
+                    'fit_id': self.fit_id,
+                    'is_velocity_mode': self.is_velocity_mode,
+                    'chi2': chi2,
+                    'chi2_nu': chi2_nu,
+                    'component_id': self.component_id,
+                    'amp': amp, 'amp_err': amp_err, 'mean': mean, 'mean_err': mean_err, 'stddev': stddev, 'stddev_err': stddev_err,
+                    'bounds': (left_bound, right_bound),
+                    'line_id': line_id if line_id else None,
+                    'line_wavelength': line_wavelength  if line_wavelength else None,
+                    'line': fit_line,
+                    'rest_wavelength': self.rest_wavelength,
+                    'rest_id': self.rest_id,
+                    'z_sys': self.redshift
+                    })
+                    print(f"  Fit ID: {self.fit_id}")
+                    print(f"  Component ID: {self.component_id}")
+                    print(f"  Velocity mode: {self.is_velocity_mode}")
+                    print(f"  Line ID: {line_id}")
+                    print(f"  Line Wavelength: {line_wavelength}")
+                    print(f"  Amplitude: {amp}+-{amp_err}")
+                    print(f"  Mean: {mean}+-{mean_err}")
+                    print(f"  Std_dev: {stddev}+-{stddev_err}")
+                    print(f"  Bounds: ({left_bound}, {right_bound})")
+                    print(f"  Chi-squared: {chi2}")
+                    print(f"  Chi-squared_nu: {chi2_nu}")
+                    print(f"  Line Object: {fit_line}\n")
+
+                    self.component_id += 1
+
+                plt.draw()
+                self.fit_id += 1
+
+                # Clear bound lines after fit
+                for line in self.bound_lines:
+                    line.remove()
+                self.bound_lines.clear()
+                for i in range(0, len(params), 3):
+                    print(f"Simultaneous Gaussian fit parameters:\nGaussian {i//3 + 1}: Amplitude = {amp}+-{amp_err}, Mean = {mean}+-{mean_err}, Std Dev = {stddev}+-{stddev_err}")
+
+        # Enter Voigt fit mode
+        if event.key == 'n':
+            if self.voigt_mode:
+                self.voigt_mode = False
+                print("Exiting Voigt fit mode.")
+            else:
+                self.voigt_mode = True
+                self.bounds = []  # Reset bounds
+                if self.bound_lines is not None:
+                    for line in self.bound_lines:  # Remove any existing bound lines
+                        line.remove()
+                self.bound_lines.clear()  # Clear the list of bound lines
+                print("Voigt fit mode: Press space to set left and right bounds.")
+                plt.draw()  # Update the plot to remove old lines
+
+        if event.key == ' ' and self.voigt_mode:  # Set bounds with space for Voigt fit
+            line_id = None
+            line_wavelength = None
+            self.bounds.append(event.xdata)
+            line = self.ax.axvline(event.xdata, color='#eca829', linestyle='--')  # Plot bound line for Voigt
+            self.bound_lines.append(line)  # Store the line object
+            print(f"Voigt bound set at x = {event.xdata}")
+            plt.draw()  # Update plot with the new bound line
+
+            # If two bounds are selected, implement Voigt fitting
+            if len(self.bounds) == 2:
+                left_bound, right_bound = sorted(self.bounds)
+
+                # Check for existing continuum
+                existing_continuum, _, _ = self.get_existing_continuum(left_bound, right_bound)
+                comp_x = self.x_data[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
+                comp_y = self.spec[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
+                comp_err = self.err[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
+
+                # Subtract existing continuum if found
+                if existing_continuum is not None:
+                    continuum_subtracted_y = comp_y - existing_continuum
+                    print("Using existing continuum for Voigt fit.")
+                else:
+                    overall_continuum, continuum_params, _ = self.fit_continuum(self.x_data, self.spec, self.err)
+                    continuum_subtracted_y = comp_y - overall_continuum
+                    print("No existing continuum found; fitted new continuum.")
+
+                left_bound, right_bound = sorted(self.bounds)
+
+                # Initial parameters for the Voigt profile fitting
+                initial_params = Parameters()
+                if np.mean(continuum_subtracted_y) > 0:
+                    initial_params.add('amp', value=max(continuum_subtracted_y) - min(continuum_subtracted_y))
+                else:
+                    initial_params.add('amp', value=min(continuum_subtracted_y) - max(continuum_subtracted_y))
+                initial_params.add('center', value=np.mean(comp_x))
+                initial_params.add('sigma', value=np.std(comp_x)/10, min=0)  # Constrain sigma to be >= 0
+                initial_params.add('gamma', value=np.std(comp_x)/10, min=0)  # Constrain gamma to be >= 0
+
+                # Create the Voigt model and perform the fit
+                voigt_model = Model(self.voigt)
+                test_output = voigt_model.eval(params=initial_params, x=comp_x)
+                if np.isnan(test_output).any():
+                    print("Warning: Model function generated NaN values with initial parameters.")
+                result = voigt_model.fit(continuum_subtracted_y, x=comp_x, params=initial_params, weights=1/comp_err)
+
+                # Clear bounds
+                for line in self.bound_lines:
+                    line.remove()
+                self.bound_lines.clear()
+                # Visualize the fit
+                # Check for existing continuum
+                existing_continuum, _, _ = self.get_existing_continuum(left_bound, right_bound)
+                x_fit = np.linspace(left_bound, right_bound, len(existing_continuum))
+                y_fit = result.eval(x=x_fit) + existing_continuum
+                residuals = comp_y - y_fit
+                chi2 = np.sum((residuals ** 2) / comp_y) # Calculate combined chi2
+                chi2_nu = chi2 / (len(x_fit) - len(result.params)) # Calculate chi2 d.o.f.
+                interpolator = interp1d(x_fit, y_fit, kind='cubic')
+                x_plt = np.linspace(x_fit.min(), x_fit.max(), 10 * len(x_fit))
+                y_plt = interpolator(x_plt)
+                fit_line, = self.ax.plot(x_plt, y_plt, color='#eca829', linestyle='--')
+                # TEMP - below I present one exploratory method for calculating column densities and other absorption line diagnostics 
+                line_wavelength = 2795 # AA
+                f = 0.5
+                N = self.column_density(existing_continuum, comp_y, f, line_wavelength, comp_x)
+                # Store the fit results
+                fit_results = {
+                    'fit_id': self.fit_id,
+                    'is_velocity_mode': self.is_velocity_mode,
+                    'chi2': result.chisqr,
+                    'chi2_nu': result.redchi,
+                    'component_id': self.component_id,
+                    'bounds': (left_bound, right_bound),
+                    'line_id': line_id if line_id else None,
+                    'line_wavelength': line_wavelength if line_wavelength else None,
+                    'line': fit_line,
+                    'rest_wavelength': self.rest_wavelength,
+                    'rest_id': self.rest_id,
+                    'z_sys': self.redshift,
+                    'N': np.log10(N) if N else None
+                }
+                for name, param in result.params.items():
+                    fit_results[name] = param.value
+                    fit_results[f'{name}_err'] = param.stderr
+                    if name == 'sigma':
+                        b = np.sqrt(2) * param.value
+                        m = 4.0359e-23 # g for Mg
+                        print(f"NOTE: Using {m} g mass for all ionic species. You may want to change this.")
+                        T_eff = self.T_eff(b, m)
+                        fit_results['b'] = b
+                        fit_results['logT_eff'] = np.log10(T_eff)
+                self.voigt_fits.append(fit_results)
+                print(f"  Fit ID: {self.fit_id}")
+                print(f"  Component ID: {self.component_id}")
+                print(f"  Velocity mode: {self.is_velocity_mode}")
+                print(f"  Line ID: {line_id}")
+                print(f"  Line Wavelength: {line_wavelength}")
+                for name, param in result.params.items():
+                    print(f"  {name}: {param.value}+-{param.stderr}")
+                    if name == 'sigma':
+                        print(f" b: {b}")
+                        print(f" logT_eff: {np.log10(T_eff)}")
+                print(f" logN: {np.log10(N)}")
+                print(f"  Bounds: ({left_bound}, {right_bound})")
+                print(f"  Chi-squared: {result.chisqr}")
+                print(f"  Chi-squared_nu: {result.redchi}")
+                print(f"  Line Object: {fit_line}\n")
+                self.fit_id += 1
+                self.component_id += 1
+                self.ax.legend()
+                plt.draw()  # Update the plot with the fitted Voigt profile
+
+                # Clear bounds for the next fitting operation
+                self.bounds.clear()
+
+                self.voigt_mode = False  # Disable Voigt mode
+
+        # Enter multi Voigt fit mode
+        if event.key == 'N':
+            if self.multi_voigt_mode:
+                self.multi_voigt_mode = False
+            else:
+                self.multi_voigt_mode = True
+            self.bounds = []  # Reset bounds
+            if self.bound_lines is not None:
+                for line in self.bound_lines:  # Remove any existing bound lines
+                    line.remove()
+            self.bound_lines.clear()  # Clear the list of bound lines
+            print("Multi Voigt fit mode: Press space to set left and right bounds.")
+            plt.draw()  # Update the plot to remove old lines
+            self.voigt_comps = []
+            self.component_id = 0
+
+        if event.key == ' ' and self.multi_voigt_mode:  # Set bounds with space for Voigt fit
+            self.bounds.append(event.xdata)
+            line = self.ax.axvline(event.xdata, color='#eca829', linestyle='--')  # Plot bound line for Voigt
+            self.bound_lines.append(line)  # Store the line object
+            print(f"Voigt bound set at x = {event.xdata}")
+            plt.draw()  # Update plot with the new bound line
+
+            # If two bounds are selected, prepare Voigt fitting
+            if len(self.bounds) % 2 == 0:
+                left_bound, right_bound = sorted(self.bounds[-2:])
+
+                # Open the LineListWindow to select a line                
+                self.line_list_window = LineListWindow(self.line_wavelengths, self.line_ids)
+                self.line_list_window.selected_line.connect(self.receive_voigt)  # Connect selection to assign function
+                self.line_list_window.show()
+                # Save bounds for later use in on_line_selected
+                self.current_bounds = (left_bound, right_bound)
+
+        elif event.key == 'enter' and self.multi_voigt_mode and len(self.bounds) >= 2 and len(self.bounds) % 2 == 0:
+            # Extract bound pairs for each Voigt component
+            bound_pairs = [(self.bounds[i], self.bounds[i + 1]) for i in range(0, len(self.bounds), 2)]
+            combined_model = None
+            params = Parameters()
+            component_ratios = []
+
+            # Unique identifiers for each component and fit
+            num_profiles = len(bound_pairs)
+
+            # Lists to accumulate plot data for each component
+            initial_params = Parameters()
+            combined_model = None
+            # Define shared parameters for sigma and gamma
+            comp_x = self.voigt_comps[0].get('comp_x') # Use first Voigt component to set initial guesses for sigma and gamma
+            # Set up models for each Voigt profile within the bounds
+            for idx, (left_bound, right_bound) in enumerate(bound_pairs):
+                prefix = f"p{idx + 1}_"  # Unique prefix for each component
+                
+                # Prepare data for fitting within the current bound
+                comp_x = self.voigt_comps[idx].get('comp_x')
+                comp_y = self.voigt_comps[idx].get('comp_y')
+                existing_continuum = self.voigt_comps[idx].get('existing_continuum')
+                continuum_subtracted_y = self.voigt_comps[idx].get('continuum_subtracted_y')
+                # Subtract existing continuum if found
+                if existing_continuum is not None:
+                    continuum_subtracted_y = comp_y - existing_continuum
+                    cont_y = existing_continuum
+                    print("Using existing continuum for Voigt fit.")
+                else:
+                    overall_continuum, continuum_params, _ = self.fit_continuum(self.x_data, self.spec, self.err)
+                    continuum_subtracted_y = comp_y - overall_continuum
+                    cont_y = overall_continuum
+                    print("No existing continuum found; fitted new continuum.")
+
+                # Define component ratio
+                if idx == 0:
+                    print(self.voigt_comps[idx].get('osc_strength'), self.voigt_comps[idx].get('line_wavelength'))
+                    ratio_item0 = self.voigt_comps[idx].get('osc_strength') * self.voigt_comps[idx].get('line_wavelength') # W_1 / W_2 = (f_1 / f_2) * (lam_1 / lam_2)
+                    component_ratios.append(1) # Leave the first component ratio item as just 1
+                else:
+                    ratio_item = (self.voigt_comps[idx].get('osc_strength') * self.voigt_comps[idx].get('line_wavelength'))/ratio_item0
+                    component_ratios.append(ratio_item)# The remaining component ratio items are then defined in terms of the first component
+                
+                # Add parameters to the model with unique prefixes
+                # Define parameters for each Voigt component
+                if idx == 0:
+                    # Set amplitude freely
+                    if np.mean(continuum_subtracted_y) > 0:
+                        initial_params.add(f'{prefix}amp', value=max(continuum_subtracted_y) - min(continuum_subtracted_y))
+                    else:
+                        initial_params.add(f'{prefix}amp', value=min(continuum_subtracted_y) - max(continuum_subtracted_y))
+                else:
+                    # Subsequent components: constrain amplitude to a ratio of the first component
+                    initial_params.add(f'{prefix}ratio', value=component_ratios[idx], vary=False)  # Fixed distance parameter
+                    initial_params.add(f'{prefix}amp', expr=f'p1_amp * {prefix}ratio')
+                if idx == 0:
+                    initial_params.add(f'{prefix}center', value=np.mean(comp_x)+np.std(comp_x), min=min(comp_x), max=max(comp_x)) # Introduce +np.std(comp_x) to guess to avoid getting stuck in local minimum during optimization
+                    # Add redshift as a free parameter
+                    initial_params.add(f'{prefix}line_wavelength', value=self.voigt_comps[idx].get('line_wavelength'), vary=False)
+                    initial_params.add(f'{prefix}z_comp', expr=f"p1_center / p1_line_wavelength - 1")  # Express in terms of centroid of transition wavelength
+                    # initial_params.add(f'{prefix}z_comp', value=self.redshift, min=0, max=self.redshift+2)  # Set reasonable bounds for redshift # Previous: calculated this redshift independently of centroid
+                    if self.is_velocity_mode:
+                        initial_params.add(f'{prefix}z_comp', value=(np.mean(comp_x)+0.2*np.std(comp_x))/self.voigt_comps[idx].get('line_wavelength'), min=(np.mean(comp_x)-10*np.std(comp_x))/self.voigt_comps[idx].get('line_wavelength'), max=(np.mean(comp_x)+10*np.std(comp_x))/self.voigt_comps[idx].get('line_wavelength'))  # Set reasonable bounds for redshift
+                else:
+                    # distance = self.voigt_comps[idx]['distance']  # Retrieve precomputed distance
+                    # initial_params.add(f'{prefix}delta', value=distance, vary=False)  # Fixed distance parameter
+                    delta_expr = f"({self.voigt_comps[idx]['line_wavelength']} - {self.voigt_comps[0]['line_wavelength']}) * (1 + p1_z_comp)"
+                    initial_params.add(f'{prefix}delta', expr=delta_expr)  # Delta depends on redshift
+                    initial_params.add(f'{prefix}center', expr=f"p1_center + {prefix}delta")
+                    initial_params.add(f'{prefix}z_comp', expr=f"p1_z_comp")  # Express in terms of centroid of transition wavelength
+                if idx == 0:
+                    initial_params.add(f'{prefix}sigma', value=np.std(comp_x) / 10, min=0.0)
+                    initial_params.add(f'{prefix}gamma', value=np.std(comp_x) / 10, min=0.0)
+                else:
+                    initial_params.add(f'{prefix}sigma', expr='p1_sigma')
+                    initial_params.add(f'{prefix}gamma', expr='p1_gamma')
+
+                # Create the Voigt model for this component
+                model = Model(self.voigt, prefix=prefix)
+                combined_model = model if combined_model is None else combined_model + model
+            
+            # Clear bounds
+            for line in self.bound_lines:
+                line.remove()
+            self.bound_lines.clear()
+            # Define self.fit_x to cover the entire range of all bound_pairs
+            leftmost_bound = min(bound[0] for bound in bound_pairs)
+            rightmost_bound = max(bound[1] for bound in bound_pairs)
+            x_fit = self.x_data[(self.x_data >= leftmost_bound) & (self.x_data <= rightmost_bound)]
+            y_fit = self.spec[(self.x_data >= leftmost_bound) & (self.x_data <= rightmost_bound)]
+            err_fit = self.err[(self.x_data >= leftmost_bound) & (self.x_data <= rightmost_bound)]
+            # Fit continuum over this entire range
+            existing_continuum, _, _ = self.get_existing_continuum(leftmost_bound, rightmost_bound)
+            continuum_subtracted_y = y_fit - existing_continuum
+            result = combined_model.fit(continuum_subtracted_y, initial_params, x=x_fit, weights=1/err_fit)
+            print(result.fit_report()) # DEBUG
+
+            for idx, (left_bound, right_bound) in enumerate(bound_pairs):
+                prefix = f'p{idx+1}_'
+                # Extract fitted parameters for each Voigt component
+                amp = result.params[f'{prefix}amp'].value
+                center = result.params[f'{prefix}center'].value
+                sigma = result.params[f'{prefix}sigma'].value
+                gamma = result.params[f'{prefix}gamma'].value
+                comp_x = self.x_data[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
+                comp_y = self.spec[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
+                existing_continuum, _, _ = self.get_existing_continuum(left_bound, right_bound)
+                # Generate data for plotting
+                x_fit = np.linspace(left_bound, right_bound, len(existing_continuum))
+                y_fit = self.voigt(x_fit, amp, center, sigma, gamma) + existing_continuum
+                interpolator = interp1d(x_fit, y_fit, kind='cubic')
+                # Higher resolution for smooth plotting
+                x_plt = np.linspace(x_fit.min(), x_fit.max(), 10 * len(x_fit))
+                y_plt = interpolator(x_plt)
+                fit_line, = self.ax.plot(x_plt, y_plt, color='#eca829', linestyle='--')
+                # Get `line_id` and `line_wavelength` from `self.voigt_comps` for this component
+                line_id = self.voigt_comps[idx].get('line_id') if idx < len(self.voigt_comps) else None
+                line_wavelength = self.voigt_comps[idx].get('line_wavelength') if idx < len(self.voigt_comps) else None
+                # TEMP - READ IN INFORMATION FROM MATCHING LINE ID IN EMLINES.TXT
+                # line_wavelength = 2795 # AA
+                f = self.voigt_comps[idx].get('osc_strength')
+                mass = None
+                N = self.column_density(existing_continuum, comp_y, f, line_wavelength, comp_x)
+                # Store the fit results
+                fit_results = {
+                    'fit_id': self.fit_id,
+                    'is_velocity_mode': self.is_velocity_mode,
+                    'chi2': result.chisqr,
+                    'chi2_nu': result.redchi,
+                    'component_id': self.component_id,
+                    'bounds': (left_bound, right_bound),
+                    'line_id': line_id if line_id else None,
+                    'line_wavelength': line_wavelength if line_wavelength else None,
+                    'line': fit_line,
+                    'rest_wavelength': self.rest_wavelength,
+                    'rest_id': self.rest_id,
+                    'z_sys': self.redshift,
+                    'N': np.log10(N) if N else None
+                }
+                for name, param in result.params.items():
+                    match = re.search(r'p(\d+)_', name) # Search the prefix for the component number
+                    if match:
+                        comp_num = int(match.group(1))
+                        if comp_num == idx+1: # Get results separately for each component
+                            name = name[len(prefix):]  # Strip the prefix if not z_comp
+                            fit_results[name] = param.value
+                            fit_results[f'{name}_err'] = param.stderr
+                            if name == 'sigma':
+                                b = np.sqrt(2) * param.value
+                                m = 4.0359e-23 # g for Mg
+                                print(f"NOTE: Using {m} g mass for all ionic species. You may want to change this.")
+                                T_eff = self.T_eff(b, m)
+                                fit_results['b'] = b
+                                fit_results['logT_eff'] = np.log10(T_eff)
+                self.voigt_fits.append(fit_results)
+                print("fit_results:",fit_results)
+                print(f"  Fit ID: {self.fit_id}")
+                print(f"  Component ID: {self.component_id}")
+                print(f"  Velocity mode: {self.is_velocity_mode}")
+                print(f"  Line ID: {line_id}")
+                print(f"  Line Wavelength: {line_wavelength}")
+                for name, param in result.params.items():
+                    match = re.search(r'p(\d+)_', name) # Search the prefix for the component number
+                    if match:
+                        comp_num = int(match.group(1))
+                    if comp_num == idx+1: # Get results separately for each component
+                        name = name[len(prefix):]  # Strip the prefix
+                        fit_results[name] = param.value
+                        fit_results[f'{name}_err'] = param.stderr
+                        print(f"  {name}: {param.value}+-{param.stderr}")
+                        if name == 'sigma':
+                            print(f"  b: {b}")
+                            print(f"  logT_eff: {np.log10(T_eff)}")
+                print(f"  logN: {np.log10(N)}")
+                print(f"  Bounds: ({left_bound}, {right_bound})")
+                print(f"  Chi-squared: {result.chisqr}")
+                print(f"  Chi-squared_nu: {result.redchi}")
+                print(f"  Line Object: {fit_line}\n")
+                self.component_id += 1
+            self.fit_id += 1
+            self.continuum_subtracted_ys = []
+            self.continuum_ys = []
+            self.voigt_comps.clear()
+            for line in self.bound_lines:
+                line.remove()
+            self.bound_lines.clear()
+            self.ax.legend()
+            plt.draw()  # Update the plot with the fitted profiles
+
+            # Clear multi-Voigt mode settings
+            self.voigt_mode = False
+            self.multi_voigt_mode = False
+
+        # Enter multi Gaussian fit mode
+        if event.key == 'D':
+            if self.multi_gaussian_mode:
+                self.multi_gaussian_mode = False
+            else:
+                self.multi_gaussian_mode = True
+            print("self.bounds:", self.bounds)
+            self.bounds = []  # Reset bounds
+            print("self.bounds:", self.bounds)
+            if self.bound_lines is not None:
+                for line in self.bound_lines:  # Remove any existing bound lines
+                    line.remove()
+            self.bound_lines.clear()  # Clear the list of bound lines
+            print("Multi Gaussian fit mode: Press space to set left and right bounds.")
+            plt.draw()  # Update the plot to remove old lines
+            self.gaussian_comps = []
+            print("self.bounds:", self.bounds)
+
+        if event.key == ' ' and self.multi_gaussian_mode:  # Set bounds with space for Gaussian fit
+            print("self.bounds:", self.bounds)
+            self.bounds.append(event.xdata)
+            print("self.bounds:", self.bounds)
+            line = self.ax.axvline(event.xdata, color='red', linestyle='--')  # Plot bound line for Gaussian
+            self.bound_lines.append(line)  # Store the line object
+            print(f"Gaussian bound set at x = {event.xdata}")
+            plt.draw()  # Update plot with the new bound line
+
+            # If two bounds are selected, prepare Voigt fitting
+            if len(self.bounds) % 2 == 0:
+                print("self.bounds:", self.bounds)
+                left_bound, right_bound = sorted(self.bounds[-2:])
+
+                # Open the LineListWindow to select a line                
+                self.line_list_window = LineListWindow(self.line_wavelengths, self.line_ids)
+                self.line_list_window.selected_line.connect(self.receive_gaussian)  # Connect selection to assign function
+                self.line_list_window.show()
+                # Save bounds for later use in on_line_selected
+                self.current_bounds = (left_bound, right_bound)
+
+        elif event.key == 'enter' and self.multi_gaussian_mode and len(self.bounds) >= 2 and len(self.bounds) % 2 == 0:
+            # Extract bound pairs for each Voigt component
+            bound_pairs = [(self.bounds[i], self.bounds[i + 1]) for i in range(0, len(self.bounds), 2)]
+            combined_model = None
+            params = Parameters()
+            component_ratios = []
+
+            # Unique identifiers for each component and fit
+            num_profiles = len(bound_pairs)
+
+            # Lists to accumulate plot data for each component
+            initial_params = Parameters()
+            combined_model = None
+            # Define shared parameters for sigma and gamma
+            comp_x = self.gaussian_comps[0].get('comp_x') # Use first Voigt component to set initial guesses for sigma and gamma
+            # Set up models for each Voigt profile within the bounds
+            for idx, (left_bound, right_bound) in enumerate(bound_pairs):
+                prefix = f"p{idx + 1}_"  # Unique prefix for each component
+                
+                # Prepare data for fitting within the current bound
+                comp_x = self.gaussian_comps[idx].get('comp_x')
+                comp_y = self.gaussian_comps[idx].get('comp_y')
+                existing_continuum = self.gaussian_comps[idx].get('existing_continuum')
+                continuum_subtracted_y = self.gaussian_comps[idx].get('continuum_subtracted_y')
+                # Subtract existing continuum if found
+                if existing_continuum is not None:
+                    continuum_subtracted_y = comp_y - existing_continuum
+                    print("Using existing continuum for Gaussian fit.")
+                else:
+                    overall_continuum, continuum_params, _ = self.fit_continuum(self.x_data, self.spec, self.err)
+                    continuum_subtracted_y = comp_y - overall_continuum
+                    print("No existing continuum found; fitted new continuum.")
+
+                # Define component ratio
+                if idx == 0:
+                    print(self.gaussian_comps[idx].get('osc_strength'), self.gaussian_comps[idx].get('line_wavelength'))
+                    ratio_item0 = self.gaussian_comps[idx].get('osc_strength') * self.gaussian_comps[idx].get('line_wavelength') # W_1 / W_2 = (f_1 / f_2) * (lam_1 / lam_2)
+                    component_ratios.append(1) # Leave the first component ratio item as just 1
+                else:
+                    ratio_item = (self.gaussian_comps[idx].get('osc_strength') * self.gaussian_comps[idx].get('line_wavelength'))/ratio_item0
+                    print("ratio_item0:", ratio_item0)
+                    print("ratio_item:", ratio_item)
+                    component_ratios.append(ratio_item)# The remaining component ratio items are then defined in terms of the first component
+                
+                # Add parameters to the model with unique prefixes
+                # Define parameters for each Voigt component
+                if idx == 0:
+                    # First component: set amplitude freely
+                    if np.mean(continuum_subtracted_y) > 0:
+                        initial_params.add(f'{prefix}amp', value=max(continuum_subtracted_y) - min(continuum_subtracted_y))
+                    else:
+                        initial_params.add(f'{prefix}amp', value=min(continuum_subtracted_y) - max(continuum_subtracted_y))
+                else:
+                    # Subsequent components: constrain amplitude to a ratio of the first component
+                    print("component_ratios[idx]:",component_ratios[idx])
+                    initial_params.add(f'{prefix}ratio', value=component_ratios[idx], vary=False)  # Fixed distance parameter
+                    initial_params.add(f'{prefix}amp', expr=f'p1_amp * {prefix}ratio')
+                if idx == 0:
+                    initial_params.add(f'{prefix}mean', value=np.mean(comp_x)+np.std(comp_x), min=min(comp_x), max=max(comp_x)) # Introduce +np.std(comp_x) to guess to avoid getting stuck in local minimum during optimization
+                else:
+                    distance = self.gaussian_comps[idx]['distance']  # Retrieve precomputed distance
+                    initial_params.add(f'{prefix}delta', value=distance, vary=False)  # Fixed distance parameter
+                    initial_params.add(f'{prefix}mean', expr=f"p1_mean + {prefix}delta")
+                if idx == 0:
+                    initial_params.add(f'{prefix}stddev', value=np.std(comp_x) / 10, min=0)
+                else:
+                    initial_params.add(f'{prefix}stddev', expr='p1_stddev')
+
+                # Create the Voigt model for this component
+                model = Model(self.gaussian, prefix=prefix)
+                combined_model = model if combined_model is None else combined_model + model
+            
+            # Clear bounds
+            for line in self.bound_lines:
+                line.remove()
+            self.bound_lines.clear()
+            # Define self.fit_x to cover the entire range of all bound_pairs
+            leftmost_bound = min(bound[0] for bound in bound_pairs)
+            rightmost_bound = max(bound[1] for bound in bound_pairs)
+            x_fit = self.x_data[(self.x_data >= leftmost_bound) & (self.x_data <= rightmost_bound)]
+            y_fit = self.spec[(self.x_data >= leftmost_bound) & (self.x_data <= rightmost_bound)]
+            err_fit = self.err[(self.x_data >= leftmost_bound) & (self.x_data <= rightmost_bound)]
+            # Fit continuum over this entire range
+            existing_continuum, _, _ = self.get_existing_continuum(leftmost_bound, rightmost_bound)
+            continuum_subtracted_y = y_fit - existing_continuum
+            result = combined_model.fit(continuum_subtracted_y, initial_params, x=x_fit, weights=1/err_fit)
+            print(result.fit_report()) # DEBUG
+
+            for idx, (left_bound, right_bound) in enumerate(bound_pairs):
+                prefix = f'p{idx+1}_'
+                # Extract fitted parameters for each Voigt component
+                amp = result.params[f'{prefix}amp'].value
+                mean = result.params[f'{prefix}mean'].value
+                stddev = result.params[f'{prefix}stddev'].value
+                comp_x = self.x_data[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
+                comp_y = self.spec[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
+                existing_continuum, _, _ = self.get_existing_continuum(left_bound, right_bound)
+                # Generate data for plotting
+                x_fit = np.linspace(left_bound, right_bound, len(existing_continuum))
+                y_fit = self.gaussian(x_fit, amp, mean, stddev) + existing_continuum
+                interpolator = interp1d(x_fit, y_fit, kind='cubic')
+                # Higher resolution for smooth plotting
+                x_plt = np.linspace(x_fit.min(), x_fit.max(), 10 * len(x_fit))
+                y_plt = interpolator(x_plt)
+                fit_line, = self.ax.plot(x_plt, y_plt, color='red', linestyle='--')
+                # Get `line_id` and `line_wavelength` from `self.gaussian_comps` for this component
+                line_id = self.gaussian_comps[idx].get('line_id') if idx < len(self.gaussian_comps) else None
+                line_wavelength = self.gaussian_comps[idx].get('line_wavelength') if idx < len(self.gaussian_comps) else None
+                # Read oscillator strength of transition
+                f = self.gaussian_comps[idx].get('osc_strength')
+                mass = None # PLACEHOLDER FOR MASS
+                N = self.column_density(existing_continuum, comp_y, f, line_wavelength, comp_x)
+                # Store the fit results
+                fit_results = {
+                    'fit_id': self.fit_id,
+                    'is_velocity_mode': self.is_velocity_mode,
+                    'chi2': result.chisqr,
+                    'chi2_nu': result.redchi,
+                    'component_id': self.component_id,
+                    'bounds': (left_bound, right_bound),
+                    'line_id': line_id if line_id else None,
+                    'line_wavelength': line_wavelength if line_wavelength else None,
+                    'line': fit_line,
+                    'rest_wavelength': self.rest_wavelength,
+                    'rest_id': self.rest_id,
+                    'z_sys': self.redshift,
+                    'N': np.log10(N) if N else None
+                }
+                for name, param in result.params.items():
+                    match = re.search(r'p(\d+)_', name) # Search the prefix for the component number
+                    if match:
+                        comp_num = int(match.group(1))
+                    if comp_num == idx+1: # Get results separately for each component
+                        name = name[len(prefix):]  # Strip the prefix
+                        fit_results[name] = param.value
+                        fit_results[f'{name}_err'] = param.stderr
+                        if name == 'stddev':
+                            b = np.sqrt(2) * param.value
+                            m = 4.0359e-23 # g for Mg
+                            print(f"NOTE: Using {m} g mass for all ionic species. You may want to change this.")
+                            T_eff = self.T_eff(b, m)
+                            fit_results['b'] = b
+                            fit_results['logT_eff'] = np.log10(T_eff)
+                self.gaussian_fits.append(fit_results)
+                print("fit_results:",fit_results)
+                print(f"  Fit ID: {self.fit_id}")
+                print(f"  Component ID: {self.component_id}")
+                print(f"  Velocity mode: {self.is_velocity_mode}")
+                print(f"  Line ID: {line_id}")
+                print(f"  Line Wavelength: {line_wavelength}")
+                for name, param in result.params.items():
+                    match = re.search(r'p(\d+)_', name) # Search the prefix for the component number
+                    if match:
+                        comp_num = int(match.group(1))
+                    if comp_num == idx+1: # Get results separately for each component
+                        name = name[len(prefix):]  # Strip the prefix
+                        fit_results[name] = param.value
+                        fit_results[f'{name}_err'] = param.stderr
+                        print(f"  {name}: {param.value}+-{param.stderr}")
+                        if name == 'stddev':
+                            print(f"  b: {b}")
+                            print(f"  logT_eff: {np.log10(T_eff)}")
+                print(f"  logN: {np.log10(N)}")
+                print(f"  Bounds: ({left_bound}, {right_bound})")
+                print(f"  Chi-squared: {result.chisqr}")
+                print(f"  Chi-squared_nu: {result.redchi}")
+                print(f"  Line Object: {fit_line}\n")
+                self.component_id += 1
+            self.fit_id += 1
+            self.continuum_subtracted_ys = []
+            self.continuum_ys = []
+            self.gaussian_comps.clear()
+            for line in self.bound_lines:
+                line.remove()
+            self.bound_lines.clear()
+            self.ax.legend()
+            plt.draw()  # Update the plot with the fitted profiles
+
+            # Clear multi-Voigt mode settings
+            self.gaussian_mode = False
+            self.multi_gaussian_mode = False
+
+
+        # Check if the cursor is within the axes bounds
+        if hasattr(event, 'xdata') and hasattr(event, 'ydata'):
+            if event.xdata is not None and event.ydata is not None:
+                if (self.x_lower_bound <= event.xdata <= self.x_upper_bound and self.y_lower_bound <= event.ydata <= self.y_upper_bound):
+                    # Smoothing with keys '1'-'9'
+                    if event.key in '123456789':
+                        try:
+                            print(f"Key pressed: {event.key}")
+                            key_num = int(event.key)
+                            # print(self.spectrum_line.get_xdata)
+                            kernel_width = key_num  # Set the kernel width based on the key pressed
+                            self.smooth_spectrum(kernel_width) # Saves the smoothed spectrum to the self.smoothed_spec variable
+                            # self.spectrum_line.set_ydata(self.smoothed_spec)  # Update line with smoothed data
+                            if self.spectrum_line:
+                                self.step_spec.set_visible(False)  # Hide the old line instead of removing it
+                                self.line_spec.set_visible(False)
+                                self.spectrum_line.set_visible(False)
+                                self.fig.canvas.draw_idle()
+                                self.step_spec, = self.ax.step(self.x_data, self.smoothed_spec, color='black', where='mid')
+                                self.line_spec, = self.ax.plot(self.x_data, self.smoothed_spec, color='black', visible=False)
+                                # self.spectrum_line = self.step_spec if self.is_step_plot else self.line_spec
+                                # Make sure to hide the step/line plot
+                                if self.is_step_plot:
+                                    self.step_spec.set_visible(True)
+                                    self.line_spec.set_visible(False)
+                                    self.spectrum_line = self.step_spec
+                                else:
+                                    self.step_spec.set_visible(False)
+                                    self.line_spec.set_visible(True)
+                                    self.spectrum_line = self.line_spec
+                                # self.spectrum_line.set_ydata(self.smoothed_spec)  # Update the data for the old line
+                                # self.spectrum_line.set_visible(True)  # Make it visible again
+                                self.fig.canvas.draw_idle()
+                            # self.spectrum_line.remove()
+                            # self.spectrum_line, = self.ax.step(self.x_data, self.smoothed_spec, color='black', where='mid') if self.is_step_plot else self.ax.plot(self.x_data, self.smoothed_spec, color='black')  # Update line with smoothed data
+                            # print(self.spectrum_line.get_xdata)
+                            # self.ax.step(self.x_data, self.smoothed_spec, where='mid')
+                            self.fig.canvas.draw_idle()
+                        except Exception as e:
+                            print(f"Error: {e}")
+                    # Reset to original spectrum with '0'
+                    elif event.key == '0':
+                        print("Key pressed:", event.key)
+                        print("Going back to unsmoothed spectrum.")
+                        # self.spectrum_line.set_ydata(self.original_spec)
+                        if self.spectrum_line:
+                            self.step_spec.set_visible(False)  # Hide the old line instead of removing it
+                            self.line_spec.set_visible(False)
+                            self.spectrum_line.set_visible(False)
+                            self.fig.canvas.draw_idle()
+                            self.step_spec, = self.ax.step(self.x_data, self.original_spec, color='black', where='mid')
+                            self.line_spec, = self.ax.plot(self.x_data, self.original_spec, color='black', visible=False)
+                            # self.spectrum_line = self.step_spec if self.is_step_plot else self.line_spec
+                            # Make sure to hide the step/line plot
+                            if self.is_step_plot:
+                                self.step_spec.set_visible(True)
+                                self.line_spec.set_visible(False)
+                                self.spectrum_line = self.step_spec
+                            else:
+                                self.step_spec.set_visible(False)
+                                self.line_spec.set_visible(True)
+                                self.spectrum_line = self.line_spec
+                            # self.spectrum_line.set_ydata(self.smoothed_spec)  # Update the data for the old line
+                            # self.spectrum_line.set_visible(True)  # Make it visible again
+                            self.fig.canvas.draw_idle()
+                        # self.spectrum_line, = self.ax.step(self.x_data, self.original_spec, color='black', where='mid') if self.is_step_plot else self.ax.plot(self.x_data, self.original_spec, color='black')  # Update line with original data
+                        self.fig.canvas.draw_idle()
+
+        if event.key == 'x':
+            # Center x-bounds on cursor position
+            center_x = event.xdata
+            x_range = self.x_upper_bound - self.x_lower_bound
+            half_range = x_range / 2
+            self.x_lower_bound = center_x - half_range
+            self.x_upper_bound = center_x + half_range
+            self.update_bounds()
+            self.update_ticks(self.ax)
+            if self.is_residual_shown:
+                self.update_residual_ticks()
+                self.update_residual_ybounds()
+            if self.linelist_plots:
+                self.display_linelist()
+            if self.markers and self.labels:
+                self.update_marker_and_label_positions()
+        elif event.key == 'y':
+            y_range = self.y_upper_bound - self.y_lower_bound
+            self.y_lower_bound -= y_range * self.zoom_factor
+            self.y_upper_bound += y_range * self.zoom_factor
+            self.update_bounds()
+            self.update_ticks(self.ax)
+            if self.is_residual_shown:
+                self.update_residual_ticks()
+                self.update_residual_ybounds()
+            if self.linelist_plots:
+                self.display_linelist()
+            if self.markers and self.labels:
+                self.update_marker_and_label_positions()
+        elif event.key == 'Y':
+            y_range = self.y_upper_bound - self.y_lower_bound
+            self.y_lower_bound += y_range * self.zoom_factor
+            self.y_upper_bound -= y_range * self.zoom_factor
+            self.update_bounds()
+            self.update_ticks(self.ax)
+            if self.is_residual_shown:
+                self.update_residual_ticks()
+                self.update_residual_ybounds()
+            if self.linelist_plots:
+                self.display_linelist()
+            if self.markers and self.labels:
+                self.update_marker_and_label_positions()
+        elif event.key == 't':
+            x_range = self.x_upper_bound - self.x_lower_bound
+            self.x_lower_bound -= x_range * self.zoom_factor
+            self.x_upper_bound += x_range * self.zoom_factor
+            self.update_bounds()
+            self.update_ticks(self.ax)
+            if self.is_residual_shown:
+                self.update_residual_ticks()
+                self.update_residual_ybounds()
+            if self.linelist_plots:
+                self.display_linelist()
+            if self.markers and self.labels:
+                self.update_marker_and_label_positions()
+        elif event.key == 'T':
+            x_range = self.x_upper_bound - self.x_lower_bound
+            self.x_lower_bound += x_range * self.zoom_factor
+            self.x_upper_bound -= x_range * self.zoom_factor
+            self.update_bounds()
+            self.update_ticks(self.ax)
+            if self.is_residual_shown:
+                self.update_residual_ticks()
+                self.update_residual_ybounds()
+            if self.linelist_plots:
+                self.display_linelist()
+            if self.markers and self.labels:
+                self.update_marker_and_label_positions()
+        elif event.key == '[':
+            x_range = self.x_upper_bound - self.x_lower_bound
+            self.x_lower_bound -= x_range
+            self.x_upper_bound -= x_range
+            self.update_bounds()
+            self.update_ticks(self.ax)
+            if self.is_residual_shown:
+                self.update_residual_ticks()
+                self.update_residual_ybounds()
+            if self.linelist_plots:
+                self.display_linelist()
+            if self.markers and self.labels:
+                self.update_marker_and_label_positions()
+        elif event.key == ']':
+            x_range = self.x_upper_bound - self.x_lower_bound
+            self.x_lower_bound += x_range
+            self.x_upper_bound += x_range
+            self.update_bounds()
+            self.update_ticks(self.ax)
+            if self.is_residual_shown:
+                self.update_residual_ticks()
+                self.update_residual_ybounds()
+            if self.linelist_plots:
+                self.display_linelist()
+            if self.markers and self.labels:
+                self.update_marker_and_label_positions()
+        elif event.key == 'o':
+            self.y_upper_bound = event.ydata
+            self.update_bounds()
+            self.update_ticks(self.ax)
+            if self.is_residual_shown:
+                self.update_residual_ticks()
+                self.update_residual_ybounds()
+            if self.linelist_plots:
+                self.display_linelist()
+            if self.markers and self.labels:
+                self.update_marker_and_label_positions()
+        elif event.key == 'p':
+            self.y_lower_bound = event.ydata
+            self.update_bounds()
+            self.update_ticks(self.ax)
+            if self.is_residual_shown:
+                self.update_residual_ticks()
+                self.update_residual_ybounds()
+            if self.linelist_plots:
+                self.display_linelist()
+            if self.markers and self.labels:
+                self.update_marker_and_label_positions()
+        elif event.key == 'i':
+            self.x_upper_bound = event.xdata
+            self.update_bounds()
+            self.update_ticks(self.ax)
+            if self.is_residual_shown:
+                self.update_residual_ticks()
+                self.update_residual_ybounds()
+            if self.linelist_plots:
+                self.display_linelist()
+            if self.markers and self.labels:
+                self.update_marker_and_label_positions()
+        elif event.key == 'u':
+            self.x_lower_bound = event.xdata
+            self.update_bounds()
+            self.update_ticks(self.ax)
+            if self.is_residual_shown:
+                self.update_residual_ticks()
+                self.update_residual_ybounds()
+            if self.linelist_plots:
+                self.display_linelist()
+            if self.markers and self.labels:
+                self.update_marker_and_label_positions()
+        elif event.key == 'e':
+            if self.linelist_plots:
+                self.clear_linelist()  # Remove the displayed lines
+            else:
+                self.display_linelist()  # Show the line list
+            self.fig.canvas.draw_idle()  # Redraw the figure to update the display
+        elif event.key in ['!', '@', '#', '$', '%', '^', '&', '*', '(', ')']:  # Corresponding to bands 0-5
+            index = ['!', '@', '#', '$', '%', '^', '&', '*', '(', ')'].index(event.key)
+            if index < len(self.band_ranges):
+                self.toggle_instrument_bands(index)  # Call function to toggle between showing and hiding instrument bands
+        elif event.key in ['-', '=', '_', '+']:
+            index = ['-', '=', '_', '+'].index(event.key)
+            self.toggle_filter_bands(index)
+        elif event.key == '\\':  # Backslash functionality to reset bounds
+            self.x_lower_bound = self.original_xlim[0]
+            self.x_upper_bound = self.original_xlim[1]
+            self.y_lower_bound = self.original_ylim[0]
+            self.y_upper_bound = self.original_ylim[1]
+            self.update_bounds()  # Update the plot bounds
+            self.update_ticks(self.ax)
+            if self.is_residual_shown:
+                self.update_residual_ticks()
+                self.update_residual_ybounds()
+            if self.linelist_plots:
+                self.display_linelist()
+            if self.markers and self.labels:
+                self.update_marker_and_label_positions()
+
+        elif event.key == ';':
+            # Toggle the total line
+            self.show_total_line = not self.show_total_line
+            if self.show_total_line:
+                # Ensure there is data to sum and plot
+                if self.continuum_fits or self.voigt_fits or self.gaussian_fits:
+                    # Generate x values for plotting (using the range of x_data)
+                    x_plot = np.linspace(self.x_data.min(), self.x_data.max(), 10000)
+
+                    # Combine continuum fits
+                    total_continuum = np.zeros_like(x_plot)
+                    for fit in self.continuum_fits:
+                        left_bound, right_bound = self.get_bounds(fit)
+                        mask = (x_plot >= left_bound) & (x_plot <= right_bound)
+                        if mask.any():
+                            a, b = fit['a'], fit['b']
+                            total_continuum[mask] += self.continuum_model(x_plot[mask], a, b)
+                    
+                    # Combine Gaussian fits
+                    total_gaussian = np.zeros_like(x_plot)
+                    for fit in self.gaussian_fits:
+                        left_bound, right_bound = min(fit['line'].get_xdata()), max(fit['line'].get_xdata())
+                        _, a, b = self.get_existing_continuum(left_bound, right_bound)
+                        existing_continuum = self.continuum_model(fit['line'].get_xdata(), a, b)
+                        if fit['is_velocity_mode'] and self.is_velocity_mode:
+                            profile_interp = interp1d(fit['line'].get_xdata(), fit['line'].get_ydata()-existing_continuum, bounds_error=False, fill_value=0)
+                        elif not fit['is_velocity_mode'] and not self.is_velocity_mode:
+                            profile_interp = interp1d(fit['line'].get_xdata(), fit['line'].get_ydata()-existing_continuum, bounds_error=False, fill_value=0)
+                        elif not fit['is_velocity_mode'] and self.is_velocity_mode:
+                            profile_interp = interp1d(self.wav_to_vel(fit['line'].get_xdata(), fit['rest_wavelength'], z=self.redshift), fit['line'].get_ydata()-existing_continuum, bounds_error=False, fill_value=0)
+                        elif fit['is_velocity_mode'] and not self.is_velocity_mode:
+                            profile_interp = interp1d(self.vel_to_wav(fit['line'].get_xdata(), fit['rest_wavelength'], z=self.redshift), fit['line'].get_ydata()-existing_continuum, bounds_error=False, fill_value=0)
+                        total_gaussian += profile_interp(x_plot)
+
+                    # Combine Voigt fits
+                    total_voigt = np.zeros_like(x_plot)
+                    for fit in self.voigt_fits:
+                        left_bound, right_bound = min(fit['line'].get_xdata()), max(fit['line'].get_xdata())
+                        _, a, b = self.get_existing_continuum(left_bound, right_bound)
+                        existing_continuum = self.continuum_model(fit['line'].get_xdata(), a, b)
+                        if fit['is_velocity_mode'] and self.is_velocity_mode:
+                            profile_interp = interp1d(fit['line'].get_xdata(), fit['line'].get_ydata()-existing_continuum, bounds_error=False, fill_value=0)
+                        elif not fit['is_velocity_mode'] and not self.is_velocity_mode:
+                            profile_interp = interp1d(fit['line'].get_xdata(), fit['line'].get_ydata()-existing_continuum, bounds_error=False, fill_value=0)
+                        elif not fit['is_velocity_mode'] and self.is_velocity_mode:
+                            profile_interp = interp1d(self.wav_to_vel(fit['line'].get_xdata(), fit['rest_wavelength'], z=self.redshift), fit['line'].get_ydata()-existing_continuum, bounds_error=False, fill_value=0)
+                        elif fit['is_velocity_mode'] and not self.is_velocity_mode:
+                            profile_interp = interp1d(self.vel_to_wav(fit['line'].get_xdata(), fit['rest_wavelength'], z=self.redshift), fit['line'].get_ydata()-existing_continuum, bounds_error=False, fill_value=0)
+                        total_voigt += profile_interp(x_plot)
+
+                    total_y = total_continuum + total_gaussian + total_voigt
+
+                    # Plot the total line
+                    self.ax.plot(x_plot, total_y, label="Total Line", color='#0ed8ca', linestyle='-')
+                    self.ax.legend()
+                    self.ax.figure.canvas.draw()
+                else:
+                    print("Warning: No fits available to sum for total line.")
+                    self.show_total_line = not self.show_total_line
+            
+            # Clear the total line if toggled off
+            else:
+                total_lines = [line for line in self.ax.get_lines() if line.get_label() == "Total Line"]
+                for line in total_lines:
+                    line.remove()
+                # Regenerate the legend to exclude removed lines
+                handles, labels = self.ax.get_legend_handles_labels()
+                filtered_handles_labels = [
+                    (handle, label) for handle, label in zip(handles, labels) if label != "Total Line"
+                ]
+                if filtered_handles_labels:
+                    filtered_handles, filtered_labels = zip(*filtered_handles_labels)
+                else:
+                    filtered_handles, filtered_labels = [], []
+
+                self.ax.legend(filtered_handles, filtered_labels)
+                self.ax.figure.canvas.draw()
+
+        # Enter Gaussian fit mode
+        elif event.key == 'd':
+            if self.gaussian_mode:
+                self.gaussian_mode = False
+                print("Exiting Gaussian fit mode.")
+            else:
+                self.gaussian_mode = True
+                self.multi_gaussian_mode = False
+                self.multi_gaussian_mode_old = False
+                self.bounds = []  # Reset bounds
+                if self.bound_lines is not None:
+                    for line in self.bound_lines:  # Remove any existing bound lines
+                        line.remove()
+                self.bound_lines.clear()  # Clear the list of bound lines
+                print("Gaussian fit mode: Press space to set left and right bounds.")
+                plt.draw()  # Update the plot to remove old lines
+
+        # Enable multi-Gaussian fit mode with '|'
+        elif event.key == '|':
+            if self.gaussian_mode or self.multi_gaussian_mode_old:
+                self.gaussian_mode = False
+                self.multi_gaussian_mode_old = False
+                print("Exiting multi-Gaussian fit mode.")
+            else:
+                self.multi_gaussian_mode_old = True
+                self.gaussian_mode = False
+                self.bounds = []
+                for line in self.bound_lines:
+                    line.remove()
+                self.bound_lines.clear()
+                print("Multi-Gaussian fit mode: Press space to set multiple bounds, enter to fit.")
+                plt.draw()
+
+        # Delete Gaussian or Voigt fit with 'w' if cursor is within its bounds
+        elif event.key == 'w':
+            x_pos = event.xdata
+            for fit in self.gaussian_fits:
+                left_bound, right_bound = fit['bounds']
+                if left_bound <= x_pos <= right_bound:
+                    fit['line'].remove()
+                    # Remove the fill area if it exists
+                    if self.ew_fill:
+                        self.ew_fill.remove()
+                        self.ew_fill = None  # Reset the fill reference
+                    self.gaussian_fits.remove(fit)
+                    print(f"Removed Gaussian fit within bounds ({left_bound}, {right_bound})")
+                    plt.draw()
+                    break
+            for fit in self.voigt_fits:
+                left_bound, right_bound = fit['bounds']
+                if left_bound <= x_pos <= right_bound:
+                    fit['line'].remove()
+                    # Remove the fill area if it exists
+                    if self.ew_fill:
+                        self.ew_fill.remove()
+                        self.ew_fill = None  # Reset the fill reference
+                    self.voigt_fits.remove(fit)
+                    print(f"Removed Voigt fit within bounds ({left_bound}, {right_bound})")
+                    plt.draw()
+                    break
+
+        # Enter redshift estimation mode
+        if event.key == 'z':
+            if self.redshift_estimation_mode:
+                self.redshift_estimation_mode = False
+                print('Exiting redshift estimation mode.')
+            else:
+                self.redshift_estimation_mode = True
+                print('Redshift estimation mode: Select Gaussian to use for redshift estimation. Assign a line to it, and estimate the redshift.')
+        # If in redshift estimation mode and spacebar is pressed
+        elif self.redshift_estimation_mode and event.key == ' ':
+            x_pos = event.xdata
+            for fit in self.gaussian_fits:
+                left_bound, right_bound = fit['bounds']
+                if left_bound <= x_pos <= right_bound:
+                    self.plot_redshift_gaussian(fit) # Plot the Gaussian in some notable color
+                    self.center_profile, self.center_profile_err = fit['mean'], fit['mean_err'] # Get the mean from the Gaussian parameters
+                    print(f"Center of selected Gaussian: {self.center_profile:.6f}+-{self.center_profile_err:.6f}")
+                    linelist_window = self.open_linelist_window()  # Open the line selection window
+                    if linelist_window:
+                        linelist_window.protocol("WM_DELETE_WINDOW", on_close_linelist)  # Call 'on_close_linelist' on window close
+                    break
+            for fit in self.voigt_fits:
+                left_bound, right_bound = fit['bounds']
+                if left_bound <= x_pos <= right_bound:
+                    self.plot_redshift_voigt(fit) # Plot the Gaussian in some notable color
+                    self.center_profile, self.center_profile_err = fit['center'], fit['center_err'] # Get the mean from the Gaussian parameters
+                    if self.center_profile_err is None:
+                        raise ValueError(f"Error associated with the center of the Voigt profile is missing for x_pos = {self.center_profile:.6f}.")
+                    print(f"Center of selected Voigt: {self.center_profile:.6f}+-{self.center_profile_err:.6f}")
+                    linelist_window = self.open_linelist_window()  # Open the line selection window
+                    if linelist_window:
+                        linelist_window.protocol("WM_DELETE_WINDOW", on_close_linelist)  # Call `on_close_linelist` on window close
+                    break
+        elif event.key == 'z' and self.redshift_estimation_mode:
+            self.redshift_estimation_mode = False
+            print('Exiting redshift estimation mode.')
+
+        if event.key == 'b':
+            self.is_velocity_mode = not self.is_velocity_mode  # Toggle Velocity mode
+            if self.is_velocity_mode:
+                self.activate_velocity_mode()  # Enter velocity mode
+                if self.is_residual_shown:
+                    self.residual_ax.set_xlabel(r"Velocity (km s$^{-1}$)")
+                    self.update_residual_ticks()
+                else:
+                    self.ax.set_xlabel(r"Velocity (km s$^{-1}$)")
+            else:
+                # Exit velocity mode
+                self.exit_velocity_mode()  
+                self.rest_wavelength = None
+                self.rest_id = None
+                
+                # Revert labels and limits to wavelength mode
+                if self.is_residual_shown:
+                    self.residual_ax.set_xlabel("Wavelength (Å)")
+                    self.update_residual_ticks()
+                else:
+                    self.ax.set_xlabel("Wavelength (Å)")
+                    
+                # Update ticks and plot
+                self.update_ticks(self.ax)
+                if self.is_residual_shown:
+                    self.update_residual_ticks()
+                    self.update_residual_ybounds()
+                    self.residual_ax.set_xlim(self.x_lower_bound, self.x_upper_bound)
+                if self.markers and self.labels:
+                    self.update_marker_and_label_positions()
+                plt.draw()
+
+        # Save Gaussian fits
+        elif event.key == 'a':
+            if self.gaussian_fits:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"gaussian_fits_{timestamp}.csv"
+                df = pd.DataFrame(self.gaussian_fits)  # Directly convert list of dictionaries to a DataFrame
+                df.drop(columns=['line'], inplace=True, errors='ignore')  # Exclude non-serializable 'line' field
+                df.to_csv(filename, index=False)
+                print(f"Saved Gaussian fits to {filename}")
+            else:
+                print("No Gaussian fits to save.")
+
+        # Save Voigt fits
+        elif event.key == 'A':
+            if self.voigt_fits:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"voigt_fits_{timestamp}.csv"
+                df = pd.DataFrame(self.voigt_fits)
+                df.drop(columns=['line'], inplace=True, errors='ignore')  # Exclude 'line'
+                df.to_csv(filename, index=False)
+                print(f"Saved Voigt fits to {filename}")
+            else:
+                print("No Voigt fits to save.")
+
+        # Save Continuum fits
+        elif event.key == 'S':
+            if self.continuum_fits:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"continuum_fits_{timestamp}.csv"
+                df = pd.DataFrame(self.continuum_fits)
+                df.drop(columns=['line', 'patches'], inplace=True, errors='ignore')  # Exclude non-serializable fields
+                df.to_csv(filename, index=False)
+                print(f"Saved Continuum fits to {filename}")
+            else:
+                print("No Continuum fits to save.")
+
+        elif event.key == 'K':
+            file_path, _ = QFileDialog.getOpenFileName(
+                parent=self,  # 'self' refers to the main widget of your application
+                caption="Select a file to load",  # Window title
+                directory='',  # Start in the current directory
+                filter="CSV Files (*.csv);;All Files (*)"  # File filters
+            )
+
+            try:
+                # Determine the file type based on the first few rows of the file
+                df = pd.read_csv(file_path)
+                # Convert 'bounds' column from string to tuple
+                df['bounds'] = df['bounds'].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) else x)
+                fit_type = None
+
+                # Check column presence to infer fit type
+                if {'amp', 'mean', 'stddev'}.issubset(df.columns):
+                    fit_type = 'gaussian'
+                elif {'a', 'b'}.issubset(df.columns):
+                    fit_type = 'continuum'
+                elif {'gamma', 'sigma'}.issubset(df.columns):
+                    fit_type = 'voigt'
+                else:
+                    raise ValueError("Unrecognized file format. Ensure the file contains valid fit parameters.")
+
+                # Process the loaded fits
+                if fit_type == 'continuum':
+                    self.continuum_fits = df.to_dict(orient='records')
+                    for fit in self.continuum_fits:
+                        fit['line'] = None  # Reinitialize the line object
+                        # Reconstruct the continuum lines
+                        x_plot = np.linspace(fit['bounds'][0], fit['bounds'][1], 100)
+                        y_plot = fit['a'] * x_plot + fit['b']
+                        fit['line'], = self.ax.plot(x_plot, y_plot, color="magenta", linestyle='--')
+
+                elif fit_type == 'gaussian':
+                    print(df.to_dict(orient='records'))
+                    self.gaussian_fits = df.to_dict(orient='records')
+                    for fit in self.gaussian_fits:
+                        fit['line'] = None  # Reinitialize the line object
+                        # Reconstruct the plot for each fit
+                        x_plot = np.linspace(fit['bounds'][0], fit['bounds'][1], 100)
+                        _, a, b = self.get_existing_continuum(fit['bounds'][0], fit['bounds'][1])
+                        existing_continuum = self.continuum_model(x_plot, a, b)
+                        y_plot = self.gaussian(x_plot, fit['amp'], fit['mean'], fit['stddev']) + existing_continuum
+                        fit['line'], = self.ax.plot(x_plot, y_plot, color="red", linestyle='--')
+
+                elif fit_type == 'voigt':
+                    self.voigt_fits = df.to_dict(orient='records')
+                    for fit in self.voigt_fits:
+                        fit['line'] = None  # Reinitialize the line object
+                        # Reconstruct the plot for each Voigt profile
+                        x_plot = np.linspace(fit['bounds'][0], fit['bounds'][1], 100)
+                        _, a, b = self.get_existing_continuum(fit['bounds'][0], fit['bounds'][1])
+                        existing_continuum = self.continuum_model(x_plot, a, b)
+                        y_plot = self.voigt(x_plot, fit['amp'], fit['center'], fit['sigma'], fit['gamma']) + existing_continuum
+                        fit['line'], = self.ax.plot(x_plot, y_plot, color="orange", linestyle='--')
+
+                self.ax.legend()
+                print(f"Successfully loaded {fit_type.capitalize()} fits from {file_path}.")
+
+            except Exception as e:
+                print(f"Failed to load fits: {e}")
+
+        # Save a pdf of the current plot
+        if event.key == '`':
+            self.save_plot_as_pdf()
+
+        # Exit the application if 'Q' is pressed
+        elif event.key == 'Q':
+            # NOTE: lowercase 'q' will only close the main window, not the entire application
+            print("Quitting the application...")
+            sys.exit()  # Terminate the entire application
+
+        if event.key == ',':  # Use ',' key to assign line ID and wavelength
+            x_pos = event.xdata  # Get x position of mouse click
+            self.selected_gaussian = None
+            self.selected_voigt = None
+
+            # Find the Gaussian fit corresponding to the selected x position
+            for fit in self.gaussian_fits:
+                left_bound, right_bound = fit['bounds']
+                if left_bound <= x_pos <= right_bound:
+                    self.selected_gaussian = fit
+                    print(f"Gaussian with parameters amp: {self.selected_gaussian['amp']}, mean: {self.selected_gaussian['mean']}, stddev: {self.selected_gaussian['stddev']} selected.")
+                    break  # Select only the first Gaussian fit found within the bounds
+
+            # OR find the Voigt fit corresponding to the selected x position
+            for fit in self.voigt_fits:
+                left_bound, right_bound = fit['bounds']
+                if left_bound <= x_pos <= right_bound:
+                    self.selected_voigt = fit
+                    print(f"Voigt with parameters amp: {self.selected_voigt['amp']}, center: {self.selected_voigt['center']}, sigma: {self.selected_voigt['sigma']}, gamma: {self.selected_voigt['gamma']}  selected.")
+                    break  # Select only the first Voigt fit found within the bounds
+            
+            if self.selected_gaussian or self.selected_voigt:
+                # Open the LineListWindow to select a line                
+                self.line_list_window = LineListWindow(self.line_wavelengths, self.line_ids)
+                self.line_list_window.selected_line.connect(self.assign_line_to_fit)  # Connect selection to assign function
+                self.line_list_window.show()
+            
+        elif event.key == '<':
+            # Find the marker and label nearest to the cursor to remove
+            x_pos = event.xdata  # Current cursor x-position
+            for marker in self.markers:
+                left_bound, right_bound = getattr(marker, 'bounds')
+                if left_bound <= x_pos <= right_bound:
+                    marker.remove()
+                    self.markers.remove(marker)
+                    print(f"Removed marker within bounds ({left_bound}, {right_bound})")
+                    plt.draw()
+                    break
+            for label in self.labels:
+                left_bound, right_bound = getattr(label, 'bounds')
+                if left_bound <= x_pos <= right_bound:
+                    label.remove()
+                    self.labels.remove(label)
+                    print(f"Removed label within bounds ({left_bound}, {right_bound})")
+                    plt.draw()
+                    break
+
+        elif event.key == ':':
+            # Enter Bayes fit mode
+            if self.bayes_mode:
+                self.bayes_mode = False
+                print("Exiting Bayes fit mode.")
+            else:
+                self.bayes_mode = True
+                self.bayes_bounds = []  # Reset bounds
+                if self.bayes_bound_lines is not None:
+                    for line in self.bayes_bound_lines:  # Remove any existing bound lines
+                        line.remove()
+                self.bayes_bound_lines.clear()  # Clear the list of bound lines
+                print("Bayes fit mode: Press space to set left and right bounds.")
+                plt.draw()  # Update the plot to remove old lines
+
+        # Select bounds to perform fit
+        elif event.key == ' ' and self.bayes_mode:
+            if len(self.bayes_bounds) < 2:
+                self.bayes_bounds.append(event.xdata)
+                line = self.ax.axvline(event.xdata, color='lightblue', linestyle='--')
+                self.bayes_bound_lines.append(line)
+                self.fig.canvas.draw_idle()
+                if len(self.bayes_bounds) == 2:
+                    self.bayes_bounds.sort()
+                    print(f"Bayes fit bounds set: {self.bayes_bounds}")
+                    self.prompt_bayes_fit()
+
+
