@@ -69,6 +69,11 @@ class FormatPickerDialog(QtWidgets.QDialog):
         sep.setFrameShadow(QtWidgets.QFrame.Sunken)
         layout.addWidget(sep)
         
+        # Initialize details_label FIRST (before any callbacks that use it)
+        self.details_label = QtWidgets.QLabel()
+        self.details_label.setWordWrap(True)
+        self.details_label.setStyleSheet("background-color: #f5f5f5; padding: 10px; border-radius: 4px; font-family: monospace;")
+        
         # Format list with scroll
         scroll = QtWidgets.QScrollArea()
         scroll.setWidgetResizable(True)
@@ -89,7 +94,6 @@ class FormatPickerDialog(QtWidgets.QDialog):
             # Select first (highest confidence) by default
             if i == 0:
                 btn.setChecked(True)
-                self._on_format_selected(i)
         
         scroll_layout.addStretch()
         scroll_widget.setLayout(scroll_layout)
@@ -102,10 +106,7 @@ class FormatPickerDialog(QtWidgets.QDialog):
         sep2.setFrameShadow(QtWidgets.QFrame.Sunken)
         layout.addWidget(sep2)
         
-        # Details panel
-        self.details_label = QtWidgets.QLabel()
-        self.details_label.setWordWrap(True)
-        self.details_label.setStyleSheet("background-color: #f5f5f5; padding: 10px; border-radius: 4px; font-family: monospace;")
+        # Add details panel
         layout.addWidget(self.details_label)
         
         # Button bar
@@ -127,6 +128,9 @@ class FormatPickerDialog(QtWidgets.QDialog):
         
         # Connect button group signal
         self.button_group.buttonClicked.connect(self._on_button_clicked)
+        
+        # NOW update details for the first selected item
+        self._on_format_selected(0)
         
         self.setLayout(layout)
     
