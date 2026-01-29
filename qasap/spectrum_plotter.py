@@ -211,6 +211,20 @@ class SpectrumPlotter(QtWidgets.QWidget):
         self.apply_button.move(20, 120)
         self.apply_button.clicked.connect(self.apply_changes)
 
+        # Create polynomial order field (for continuum fitting, hidden by default)
+        self.label_poly_order = QLabel("Poly Order:", self)
+        self.label_poly_order.move(20, 160)
+        self.label_poly_order.hide()
+        self.input_poly_order = QLineEdit(self)
+        self.input_poly_order.move(105, 155)
+        self.input_poly_order.resize(100, 30)
+        self.input_poly_order.setText("1")  # Default to first-order polynomial
+        self.input_poly_order.hide()
+        poly_validator = QtWidgets.QIntValidator(0, 10, self)
+        self.input_poly_order.setValidator(poly_validator)
+        
+        self.poly_order = 1  # Store the current polynomial order
+
         # Show the window
         self.show()
 
@@ -229,13 +243,19 @@ class SpectrumPlotter(QtWidgets.QWidget):
             # Update redshift and zoom factor from input fields
             self.redshift = float(self.input_redshift.text())
             self.zoom_factor = float(self.input_zoom.text())
+            
+            # Update polynomial order if visible
+            if not self.input_poly_order.isHidden():
+                self.poly_order = int(self.input_poly_order.text())
+                print(f"Polynomial order set to: {self.poly_order}")
+            
             print(f"Applied Redshift: {self.redshift}, Zoom Factor: {self.zoom_factor}")
             if self.linelist_plots:
                 self.clear_linelist()
                 self.display_linelist() # Re-display linelist
                 self.fig.canvas.draw_idle()  # Redraw the figure to update the display
         except ValueError:
-            print("Invalid input for redshift or zoom factor. Please enter numerical values.")
+            print("Invalid input for redshift, zoom factor, or polynomial order. Please enter numerical values.")
 
     def extract_1d_spectrum(self):
         # Load FITS files
@@ -742,16 +762,18 @@ class SpectrumPlotter(QtWidgets.QWidget):
         try:
             for continuum_fit in self.continuum_fits:
                 if continuum_fit['bounds'][0] <= left_bound and continuum_fit['bounds'][1] >= right_bound:
-                    return (
-                        self.continuum_model(self.x_data[(self.x_data >= left_bound) & (self.x_data <= right_bound)],
-                                            continuum_fit['a'],
-                                            continuum_fit['b']),
-                        continuum_fit['a'],
-                        continuum_fit['b'] # Continuum array within bounds, a, b
-                    )
-        except ValueError:
+                    x_range = self.x_data[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
+                    if 'coeffs' in continuum_fit:
+                        # New format with polynomial coefficients
+                        continuum_vals = np.polyval(continuum_fit['coeffs'], x_range)
+                        return continuum_vals, continuum_fit['coeffs'][0], continuum_fit['coeffs'][-1]
+                    else:
+                        # Old format with a, b parameters (backwards compatibility)
+                        continuum_vals = self.continuum_model(x_range, continuum_fit['a'], continuum_fit['b'])
+                        return continuum_vals, continuum_fit['a'], continuum_fit['b']
+        except (ValueError, KeyError):
             print("No existing continuum within bounds")
-            return
+            return None, None, None
 
     def get_bounds(self, fit):
         if self.is_velocity_mode:
@@ -1236,14 +1258,34 @@ class SpectrumPlotter(QtWidgets.QWidget):
             y += self.voigt(x, amp, center, sigma, gamma)
         return y
 
-    def continuum_model(self, x, a, b):
-        return a * x + b  # Linear model for continuum
+    def continuum_model(self, x, *params):
+        """
+        Polynomial continuum model of order determined by number of parameters.
+        params are coefficients for polynomial from highest to lowest order.
+        """
+        return np.polyval(params, x)
 
     # Define a function to fit the continuum
-    def fit_continuum(self, x, y, err, sigma_threshold=2, max_iterations=10, tolerance=1e-4):
+    def fit_continuum(self, x, y, err, sigma_threshold=2, max_iterations=10, tolerance=1e-4, poly_order=None):
         """
-        Fits a continuum model to the provided data using iterative sigma-clipping.
+        Fits a polynomial continuum model to the provided data using iterative sigma-clipping.
+        
+        Parameters:
+        -----------
+        x, y, err : arrays
+            Data points and errors
+        sigma_threshold : float
+            Sigma clipping threshold
+        max_iterations : int
+            Maximum number of iterations
+        tolerance : float
+            Convergence tolerance
+        poly_order : int, optional
+            Polynomial order. If None, uses self.poly_order
         """
+        if poly_order is None:
+            poly_order = self.poly_order
+        
         try:
             # Start with all values
             mask = np.ones_like(y, dtype=bool)
@@ -1255,10 +1297,9 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 y_filtered = y[mask]
                 err_filtered = err[mask]
 
-                # Fit the continuum model to the filtered data
-                params, pcov = curve_fit(self.continuum_model, x_filtered, y_filtered, sigma=err_filtered)
-                perr = np.sqrt(np.diag(pcov))
-                continuum = self.continuum_model(x, *params)
+                # Fit polynomial of specified order
+                coeffs = np.polyfit(x_filtered, y_filtered, poly_order)
+                continuum = np.polyval(coeffs, x)
 
                 # Calculate residuals and updated mean and standard deviation
                 residuals = y - continuum
@@ -1282,11 +1323,21 @@ class SpectrumPlotter(QtWidgets.QWidget):
             else:
                 print("Warning: Maximum iterations reached without full convergence.")
 
+            # Calculate errors on coefficients
+            coeffs_with_cov = np.polyfit(x_filtered, y_filtered, poly_order, cov=True)
+            if isinstance(coeffs_with_cov, tuple):
+                coeffs = coeffs_with_cov[0]
+                pcov = coeffs_with_cov[1]
+                perr = np.sqrt(np.diag(pcov))
+            else:
+                coeffs = coeffs_with_cov
+                perr = np.ones(poly_order + 1)
+
             # Return the final continuum and parameters
-            return continuum, params, perr
+            return continuum, coeffs, perr
         except RuntimeError as e:
             print(f"Error in fitting continuum: {e}")
-            return None, None
+            return None, None, None
 
     # Function to clear all continuum regions
     def clear_continuum_regions(self):
@@ -2486,7 +2537,11 @@ class SpectrumPlotter(QtWidgets.QWidget):
 
         if event.key == 'm':
             self.continuum_mode = True
+            self.label_poly_order.show()
+            self.input_poly_order.show()
+            self.setGeometry(100, 100, 440, 250)  # Expand window to fit poly order field
             print("Continuum fitting mode: Use the spacebar to define regions.")
+            print(f"Current polynomial order: {self.poly_order}")
 
         if event.key == 'enter' and self.continuum_mode:
             # Combine all defined regions into a single dataset for fitting
@@ -2512,10 +2567,13 @@ class SpectrumPlotter(QtWidgets.QWidget):
             combined_err = np.array(combined_err)
 
             # Fit the continuum using the combined data
-            continuum, params, perr = self.fit_continuum(combined_wav, combined_spec, combined_err)
-            a, b = params[0], params[1]
-            a_err, b_err = perr[0], perr[1]
-            print('Continuum fit - a:',a,'+-',a_err,'b:',b,'+-',b_err)
+            continuum, coeffs, perr = self.fit_continuum(combined_wav, combined_spec, combined_err, poly_order=self.poly_order)
+            
+            # Print fit parameters
+            poly_str = f"Continuum fit (order {self.poly_order}):"
+            for i, (coeff, err) in enumerate(zip(coeffs, perr)):
+                poly_str += f" c{i}={coeff:.6e}±{err:.6e}"
+            print(poly_str)
 
             # Plot the fitted continuum and store the line object
             continuum_line, = self.ax.plot(combined_wav, continuum, color='magenta', linestyle='--', alpha=0.8)
@@ -2527,8 +2585,9 @@ class SpectrumPlotter(QtWidgets.QWidget):
             # Add continuum fit
             continuum_fit = {
                 'bounds': region_bounds,  # Tuple (left_bound, right_bound)
-                'a': a, 'b': b,                # Parameters [a, b]
-                'a_err': a_err, 'b_err': b_err,
+                'coeffs': coeffs,               # Polynomial coefficients
+                'coeffs_err': perr,             # Coefficient errors
+                'poly_order': self.poly_order,  # Polynomial order
                 'patches': self.continuum_patches,    # The patches object is for plotting
                 'line': continuum_line,            
                 'is_velocity_mode': self.is_velocity_mode
@@ -2536,6 +2595,9 @@ class SpectrumPlotter(QtWidgets.QWidget):
             self.continuum_fits.append(continuum_fit)
             self.continuum_regions = [] # Clear continuum_regions
             self.continuum_mode = False # Exit continuum mode
+            self.label_poly_order.hide()
+            self.input_poly_order.hide()
+            self.setGeometry(100, 100, 440, 200)  # Restore original window size
             print('Exiting continuum mode.')
         elif event.key == ' ' and self.continuum_mode:
             # Capture current mouse x-coordinate for regions
