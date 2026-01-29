@@ -88,15 +88,19 @@ python qasap.py spectrum.fits --fmt fits:image1d
 
 ```
 qasap/
-  ├── __init__.py           # Package initialization
-  ├── spectrum_io.py        # File I/O with auto-detection
-  ├── spectrum_analysis.py  # Fitting and analysis functions
-  └── ui_components.py      # PyQt5 GUI interface
-qasap_v0.5/                # v0.5 stable release
-  ├── qasap_v0.5.py
-  ├── README.md
-  └── data files
-qasap.py                   # Main entry point (v0.8)
+  ├── __init__.py              # Package initialization
+  ├── qasap.py                 # Main entry point
+  ├── spectrum_io.py           # File I/O with auto-detection
+  ├── spectrum_analysis.py     # Fitting and analysis functions
+  ├── spectrum_plotter.py      # Main visualization widget (~4500 lines)
+  ├── spectrum_plotter_app.py  # Application wrapper
+  ├── ui_components.py         # UI component exports
+  ├── linelist_window.py       # Line identification window
+  ├── listfit_window.py        # Multi-component fitting dialog
+  ├── item_tracker.py          # Component tracking and management
+  ├── emlines.txt              # Emission line catalog
+  ├── emlines_osc.txt          # Emission lines with oscillator strengths
+  └── instrument_bands.txt     # Filter/instrument band definitions
 ```
 
 ## Data Files
