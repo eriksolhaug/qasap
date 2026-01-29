@@ -1,12 +1,12 @@
 # QASAP — Quick Analysis of Spectra and Profiles
 ## Version 0.8
 
-![PyQt5](https://img.shields.io/badge/PyQt5-5.15%2B-blue?logo=pyqt%26logoColor=white)
-![scipy](https://img.shields.io/badge/scipy-1.5%2B-brightgreen?logo=python%26logoColor=white)
-![matplotlib](https://img.shields.io/badge/matplotlib-3.1%2B-orange?logo=python%26logoColor=white)
-![astropy](https://img.shields.io/badge/astropy-4.0%2B-red?logo=python%26logoColor=white)
-![lmfit](https://img.shields.io/badge/lmfit-0.9%2B-purple?logo=python%26logoColor=white)
-![emcee](https://img.shields.io/badge/emcee-3.0%2B-yellowgreen?logo=python%26logoColor=white)
+![PyQt5](https://img.shields.io/badge/PyQt5-5.15%2B-blue?logo=pyqt&logoColor=white)
+![scipy](https://img.shields.io/badge/scipy-1.5%2B-brightgreen?logo=python&logoColor=white)
+![matplotlib](https://img.shields.io/badge/matplotlib-3.1%2B-orange?logo=python&logoColor=white)
+![astropy](https://img.shields.io/badge/astropy-4.0%2B-red?logo=python&logoColor=white)
+![lmfit](https://img.shields.io/badge/lmfit-0.9%2B-purple?logo=python&logoColor=white)
+![emcee](https://img.shields.io/badge/emcee-3.0%2B-yellowgreen?logo=python&logoColor=white)
 
 Interactive Python tool for comprehensive 1D spectral analysis with intelligent file format detection. QASAP provides both quick-look functionality and advanced analysis features including multi-component line fitting, continuum modeling, and Bayesian MCMC fitting.
 
