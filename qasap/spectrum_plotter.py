@@ -4380,7 +4380,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 g_stddev = params[f'{prefix}stddev'].value
                 
                 y_component = self.gaussian(x_smooth, g_amp, g_mean, g_stddev)
-                line, = self.ax.plot(x_smooth, y_component, color=color, linestyle='--', linewidth=2, label=f'Gaussian {gauss_count+1}')
+                line, = self.ax.plot(x_smooth, y_component, color=color, linestyle='--', linewidth=2)
                 
                 # Add to gaussian_fits for redshift mode
                 gaussian_fit = {
@@ -4414,7 +4414,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 v_gamma = params[f'{prefix}gamma'].value
                 
                 y_component = self.voigt(x_smooth, v_amp, v_center, v_sigma, v_gamma)
-                line, = self.ax.plot(x_smooth, y_component, color=color, linestyle='--', linewidth=2, label=f'Voigt {voigt_count+1}')
+                line, = self.ax.plot(x_smooth, y_component, color=color, linestyle='--', linewidth=2)
                 
                 # Add to voigt_fits for redshift mode
                 voigt_fit = {
@@ -4448,7 +4448,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 for i in range(order + 1):
                     poly_coeffs.append(params[f'{prefix}c{i}'].value)
                 y_component = np.polyval(poly_coeffs, x_smooth)
-                line, = self.ax.plot(x_smooth, y_component, color=color, linestyle='--', linewidth=2, label=f'Polynomial ({order})')
+                line, = self.ax.plot(x_smooth, y_component, color=color, linestyle='--', linewidth=2)
                 # Register with ItemTracker
                 position_str = f"λ: {left_bound:.2f}-{right_bound:.2f} Å"
                 item_id = self.register_item('polynomial', f'Polynomial (order={order})', position=position_str, color=color)
