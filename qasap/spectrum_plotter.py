@@ -3899,24 +3899,20 @@ class SpectrumPlotter(QtWidgets.QWidget):
             for fit in self.gaussian_fits:
                 left_bound, right_bound = fit['bounds']
                 if left_bound <= x_pos <= right_bound:
-                    self.plot_redshift_gaussian(fit) # Plot the Gaussian in some notable color
-                    self.center_profile, self.center_profile_err = fit['mean'], fit['mean_err'] # Get the mean from the Gaussian parameters
+                    self.plot_redshift_gaussian(fit)
+                    self.center_profile, self.center_profile_err = fit['mean'], fit['mean_err']
                     print(f"Center of selected Gaussian: {self.center_profile:.6f}+-{self.center_profile_err:.6f}")
-                    linelist_window = self.open_linelist_window()  # Open the line selection window
-                    if linelist_window:
-                        linelist_window.protocol("WM_DELETE_WINDOW", on_close_linelist)  # Call 'on_close_linelist' on window close
+                    self.open_linelist_window()
                     break
             for fit in self.voigt_fits:
                 left_bound, right_bound = fit['bounds']
                 if left_bound <= x_pos <= right_bound:
-                    self.plot_redshift_voigt(fit) # Plot the Gaussian in some notable color
-                    self.center_profile, self.center_profile_err = fit['center'], fit['center_err'] # Get the mean from the Gaussian parameters
+                    self.plot_redshift_voigt(fit)
+                    self.center_profile, self.center_profile_err = fit['center'], fit['center_err']
                     if self.center_profile_err is None:
                         raise ValueError(f"Error associated with the center of the Voigt profile is missing for x_pos = {self.center_profile:.6f}.")
                     print(f"Center of selected Voigt: {self.center_profile:.6f}+-{self.center_profile_err:.6f}")
-                    linelist_window = self.open_linelist_window()  # Open the line selection window
-                    if linelist_window:
-                        linelist_window.protocol("WM_DELETE_WINDOW", on_close_linelist)  # Call `on_close_linelist` on window close
+                    self.open_linelist_window()
                     break
         elif event.key == 'z' and self.redshift_estimation_mode:
             self.redshift_estimation_mode = False
