@@ -789,6 +789,8 @@ class SpectrumPlotter(QtWidgets.QWidget):
                         # Old format with a, b parameters (backwards compatibility)
                         continuum_vals = self.continuum_model(x_range, continuum_fit['a'], continuum_fit['b'])
                         return continuum_vals, continuum_fit['a'], continuum_fit['b']
+            # No matching continuum found
+            return None, None, None
         except (ValueError, KeyError):
             print("No existing continuum within bounds")
             return None, None, None
