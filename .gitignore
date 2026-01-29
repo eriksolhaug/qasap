@@ -83,3 +83,4 @@ Thumbs.db
 *.txt.bak
 plot_*.pdf
 *_fits_*.csv
+*.key
