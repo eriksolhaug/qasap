@@ -21,7 +21,7 @@ from lmfit import Model, Parameters, conf_interval, minimize
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton
 from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtCore import pyqtSignal, Qt
-from PyQt5.QtGui import QDoubleValidator
+from PyQt5.QtGui import QDoubleValidator, QIntValidator
 from PyQt5.QtWidgets import QFileDialog
 from datetime import datetime
 import ast
@@ -220,7 +220,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
         self.input_poly_order.resize(100, 30)
         self.input_poly_order.setText("1")  # Default to first-order polynomial
         self.input_poly_order.hide()
-        poly_validator = QtWidgets.QIntValidator(0, 10, self)
+        poly_validator = QIntValidator(0, 10, self)
         self.input_poly_order.setValidator(poly_validator)
         
         self.poly_order = 1  # Store the current polynomial order
@@ -2544,6 +2544,14 @@ class SpectrumPlotter(QtWidgets.QWidget):
             print(f"Current polynomial order: {self.poly_order}")
 
         if event.key == 'enter' and self.continuum_mode:
+            # Update polynomial order from input field
+            try:
+                self.poly_order = int(self.input_poly_order.text())
+                print(f"Using polynomial order: {self.poly_order}")
+            except ValueError:
+                print("Invalid polynomial order, using default order 1")
+                self.poly_order = 1
+            
             # Combine all defined regions into a single dataset for fitting
             combined_wav = []
             combined_spec = []
