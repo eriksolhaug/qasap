@@ -30,6 +30,7 @@ import re
 # Import LineListWindow from sibling module
 from .linelist_window import LineListWindow
 from .listfit_window import ListfitWindow
+from .item_tracker import ItemTracker
 
 class SpectrumPlotter(QtWidgets.QWidget):
     def __init__(self, fits_file, redshift=0.0, zoom_factor=0.1, file_flag=0, alfosc=False, alfosc_bin=10, alfosc_left=0, alfosc_right=0, alfosc_output="", lsf="10",):
@@ -161,7 +162,11 @@ class SpectrumPlotter(QtWidgets.QWidget):
         self.mask_mode = False
         self.mask_patches = []
 
-    
+        # Item Tracker
+        self.item_tracker = ItemTracker()
+        self.item_id_counter = 0
+        self.item_id_map = {}  # Maps item_id to {'type': 'gaussian', 'fit': fit_dict, ...}
+
     def init_controlpanel(self):
         # Set main window title and geometry
         self.setWindowTitle("QASAP Control Panel")
@@ -1607,6 +1612,42 @@ class SpectrumPlotter(QtWidgets.QWidget):
             self.redshift_estimation_mode = False
             print('Exiting redshift estimation mode.')
         
+    def register_item(self, item_type, name, fit_dict=None, line_obj=None):
+        """Register an item with the tracker"""
+        item_id = f"{item_type}_{self.item_id_counter}"
+        self.item_id_counter += 1
+        self.item_id_map[item_id] = {
+            'type': item_type,
+            'fit_dict': fit_dict,
+            'line_obj': line_obj,
+            'name': name
+        }
+        self.item_tracker.add_item(item_id, item_type, name, line_obj)
+        return item_id
+    
+    def unregister_item(self, item_id):
+        """Remove item from tracker"""
+        if item_id in self.item_id_map:
+            del self.item_id_map[item_id]
+            self.item_tracker.remove_item(item_id)
+    
+    def show_item_tracker(self):
+        """Show the item tracker window"""
+        self.item_tracker.item_deleted.connect(self.on_item_deleted_from_tracker)
+        self.item_tracker.show()
+    
+    def on_item_deleted_from_tracker(self, item_id):
+        """Handle item deletion from tracker"""
+        if item_id not in self.item_id_map:
+            return
+        
+        item_info = self.item_id_map[item_id]
+        line_obj = item_info.get('line_obj')
+        if line_obj:
+            line_obj.remove()
+        plt.draw()
+        self.unregister_item(item_id)
+        
     def estimate_redshift(self, selected_id, selected_wavelength):
         self.selected_id, self.selected_rest_wavelength = selected_id, selected_wavelength  # Store the selected wavelength
         if self.selected_id is not None and self.selected_rest_wavelength is not None:
@@ -2450,6 +2491,13 @@ class SpectrumPlotter(QtWidgets.QWidget):
             if event.xdata is not None and event.ydata is not None:
                 if not (self.x_lower_bound <= event.xdata <= self.x_upper_bound and self.y_lower_bound <= event.ydata <= self.y_upper_bound):
                     return  # Exit if the cursor is outside the plot area
+
+        # Show/hide item tracker with 'Ctrl+I' or similar accessible key - using '*' key
+        if event.key == '*':
+            if self.item_tracker.isVisible():
+                self.item_tracker.hide()
+            else:
+                self.show_item_tracker()
 
         # Toggle residual panel
         if event.key == 'r':
@@ -4274,93 +4322,90 @@ class SpectrumPlotter(QtWidgets.QWidget):
         colors = {'gaussian': 'red', 'voigt': 'orange', 'polynomial': 'magenta'}
         
         # Plot individual components
-        component_count = {'gaussian': 0, 'voigt': 0, 'polynomial': 0}
+        gauss_count = 0
+        voigt_count = 0
+        poly_count = 0
+        
         for comp in components:
             comp_type = comp['type']
-            component_count[comp_type] += 1
             color = colors[comp_type]
-            
-            # Extract component from result
             params = result.params
             
-            if comp_type == 'gaussian' and component_count[comp_type] > 0:
-                # Assuming single component for now
-                g_amp = params.get('g_amp', 0).value
-                g_mean = params.get('g_mean', 0).value
-                g_stddev = params.get('g_stddev', 0).value
-                if g_amp and g_mean and g_stddev:
-                    y_component = self.gaussian(x_smooth, g_amp, g_mean, g_stddev)
-                    line, = self.ax.plot(x_smooth, y_component, color=color, linestyle='--', linewidth=2, label=f'Gaussian {component_count[comp_type]}')
-                    
-                    # Also add to gaussian_fits for redshift mode selection
-                    gaussian_fit = {
-                        'fit_id': self.fit_id,
-                        'is_velocity_mode': self.is_velocity_mode,
-                        'component_id': self.component_id,
-                        'amp': g_amp, 'amp_err': 0.0,
-                        'mean': g_mean, 'mean_err': 0.0,
-                        'stddev': g_stddev, 'stddev_err': 0.0,
-                        'bounds': (left_bound, right_bound),
-                        'line_id': None,
-                        'line_wavelength': None,
-                        'line': line,
-                        'rest_wavelength': self.rest_wavelength,
-                        'rest_id': self.rest_id,
-                        'z_sys': self.redshift
-                    }
-                    self.gaussian_fits.append(gaussian_fit)
-                    self.component_id += 1
-                    
-                    # Store component line reference
-                    comp_id = len(self.listfit_component_lines)
-                    self.listfit_component_lines[comp_id] = {'type': 'gaussian', 'line': line, 'params': {'amp': g_amp, 'mean': g_mean, 'sigma': g_stddev}}
+            if comp_type == 'gaussian':
+                prefix = f'g{gauss_count}_'
+                g_amp = params[f'{prefix}amp'].value
+                g_mean = params[f'{prefix}mean'].value
+                g_stddev = params[f'{prefix}stddev'].value
+                
+                y_component = self.gaussian(x_smooth, g_amp, g_mean, g_stddev)
+                line, = self.ax.plot(x_smooth, y_component, color=color, linestyle='--', linewidth=2, label=f'Gaussian {gauss_count+1}')
+                
+                # Add to gaussian_fits for redshift mode
+                gaussian_fit = {
+                    'fit_id': self.fit_id,
+                    'is_velocity_mode': self.is_velocity_mode,
+                    'component_id': self.component_id,
+                    'amp': g_amp, 'amp_err': 0.0,
+                    'mean': g_mean, 'mean_err': 0.0,
+                    'stddev': g_stddev, 'stddev_err': 0.0,
+                    'bounds': (left_bound, right_bound),
+                    'line_id': None,
+                    'line_wavelength': None,
+                    'line': line,
+                    'rest_wavelength': self.rest_wavelength,
+                    'rest_id': self.rest_id,
+                    'z_sys': self.redshift
+                }
+                self.gaussian_fits.append(gaussian_fit)
+                self.component_id += 1
+                gauss_count += 1
             
-            elif comp_type == 'voigt' and component_count[comp_type] > 0:
-                v_amp = params.get('v_amp', 0).value
-                v_center = params.get('v_center', 0).value
-                v_sigma = params.get('v_sigma', 0).value
-                v_gamma = params.get('v_gamma', 0).value
-                if v_amp and v_center and v_sigma and v_gamma:
-                    y_component = self.voigt(x_smooth, v_amp, v_center, v_sigma, v_gamma)
-                    line, = self.ax.plot(x_smooth, y_component, color=color, linestyle='--', linewidth=2, label=f'Voigt {component_count[comp_type]}')
-                    
-                    # Also add to voigt_fits for redshift mode selection
-                    voigt_fit = {
-                        'fit_id': self.fit_id,
-                        'is_velocity_mode': self.is_velocity_mode,
-                        'component_id': self.component_id,
-                        'amp': v_amp, 'amp_err': 0.0,
-                        'center': v_center, 'center_err': 0.0,
-                        'sigma': v_sigma, 'sigma_err': 0.0,
-                        'gamma': v_gamma, 'gamma_err': 0.0,
-                        'bounds': (left_bound, right_bound),
-                        'line_id': None,
-                        'line_wavelength': None,
-                        'line': line,
-                        'rest_wavelength': self.rest_wavelength,
-                        'rest_id': self.rest_id,
-                        'z_sys': self.redshift
-                    }
-                    self.voigt_fits.append(voigt_fit)
-                    self.component_id += 1
-                    
-                    # Store component line reference
-                    comp_id = len(self.listfit_component_lines)
-                    self.listfit_component_lines[comp_id] = {'type': 'voigt', 'line': line, 'params': {'amp': v_amp, 'center': v_center, 'sigma': v_sigma, 'gamma': v_gamma}}
+            elif comp_type == 'voigt':
+                prefix = f'v{voigt_count}_'
+                v_amp = params[f'{prefix}amp'].value
+                v_center = params[f'{prefix}center'].value
+                v_sigma = params[f'{prefix}sigma'].value
+                v_gamma = params[f'{prefix}gamma'].value
+                
+                y_component = self.voigt(x_smooth, v_amp, v_center, v_sigma, v_gamma)
+                line, = self.ax.plot(x_smooth, y_component, color=color, linestyle='--', linewidth=2, label=f'Voigt {voigt_count+1}')
+                
+                # Add to voigt_fits for redshift mode
+                voigt_fit = {
+                    'fit_id': self.fit_id,
+                    'is_velocity_mode': self.is_velocity_mode,
+                    'component_id': self.component_id,
+                    'amp': v_amp, 'amp_err': 0.0,
+                    'center': v_center, 'center_err': 0.0,
+                    'sigma': v_sigma, 'sigma_err': 0.0,
+                    'gamma': v_gamma, 'gamma_err': 0.0,
+                    'bounds': (left_bound, right_bound),
+                    'line_id': None,
+                    'line_wavelength': None,
+                    'line': line,
+                    'rest_wavelength': self.rest_wavelength,
+                    'rest_id': self.rest_id,
+                    'z_sys': self.redshift
+                }
+                self.voigt_fits.append(voigt_fit)
+                self.component_id += 1
+                voigt_count += 1
             
             elif comp_type == 'polynomial':
+                prefix = f'p{poly_count}_'
                 order = comp.get('order', 1)
-                # Extract polynomial coefficients from result
                 poly_coeffs = []
                 for i in range(order + 1):
-                    poly_coeffs.append(params.get(f'p_c{i}', 0).value)
+                    poly_coeffs.append(params[f'{prefix}c{i}'].value)
                 y_component = np.polyval(poly_coeffs, x_smooth)
                 self.ax.plot(x_smooth, y_component, color=color, linestyle='--', linewidth=2, label=f'Polynomial ({order})')
+                poly_count += 1
         
         # Plot total fit
         y_total = result.best_fit
         self.ax.plot(x_fit, y_total, color='darkblue', linestyle='-', linewidth=1.5, label='Total Fit', zorder=10)
         
         self.ax.legend()
+
 
 
