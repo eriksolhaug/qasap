@@ -15,7 +15,8 @@ class FormatPickerDialog(QtWidgets.QDialog):
     Dialog for selecting spectrum file format from detected candidates.
     
     Shows a list of auto-detected formats with confidence scores, descriptions,
-    and allows user to select which one to use.
+    and allows user to select which one to use. For ASCII formats, provides
+    delimiter and column mapping options.
     """
     
     def __init__(self, filepath: str, candidates: List[Dict[str, Any]], parent=None):
@@ -38,8 +39,8 @@ class FormatPickerDialog(QtWidgets.QDialog):
         self.selected_format = None
         self.selected_options = None
         
-        self.setWindowTitle("QASAP - Format Selection")
-        self.setGeometry(100, 100, 700, 500)
+        self.setWindowTitle("Select Spectrum Format")
+        self.setGeometry(100, 100, 600, 400)
         self.setModal(True)
         
         # Sort candidates by score (highest first)
@@ -50,156 +51,153 @@ class FormatPickerDialog(QtWidgets.QDialog):
     def _init_ui(self):
         """Initialize the user interface."""
         layout = QtWidgets.QVBoxLayout()
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
         
-        # Header with filename
-        header = QtWidgets.QLabel()
-        header.setText(f"<b>Select Format for:</b> {self.filepath}")
-        header.setStyleSheet("font-size: 12px; margin-bottom: 10px;")
-        layout.addWidget(header)
+        # File label
+        file_label = QtWidgets.QLabel()
+        file_label.setText(f"<b>File:</b> {self.filepath}")
+        file_label.setStyleSheet("font-size: 10px;")
+        layout.addWidget(file_label)
         
-        # Info label
-        info = QtWidgets.QLabel()
-        info.setText(f"Detected {len(self.candidates)} possible format(s). Select one and click Load.")
-        info.setStyleSheet("color: #666; font-size: 10px; margin-bottom: 10px;")
-        layout.addWidget(info)
+        # Format list label
+        list_label = QtWidgets.QLabel("Detected formats:")
+        layout.addWidget(list_label)
         
-        # Separator
-        sep = QtWidgets.QFrame()
-        sep.setFrameShape(QtWidgets.QFrame.HLine)
-        sep.setFrameShadow(QtWidgets.QFrame.Sunken)
-        layout.addWidget(sep)
-        
-        # Initialize details_label FIRST (before any callbacks that use it)
-        self.details_label = QtWidgets.QLabel()
-        self.details_label.setWordWrap(True)
-        self.details_label.setStyleSheet("background-color: #f5f5f5; padding: 10px; border-radius: 4px; font-family: monospace;")
-        
-        # Format list with scroll
-        scroll = QtWidgets.QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll_widget = QtWidgets.QWidget()
-        scroll_layout = QtWidgets.QVBoxLayout()
-        scroll_layout.setContentsMargins(0, 0, 0, 0)
-        scroll_layout.setSpacing(10)
-        
-        self.format_buttons = {}
-        self.button_group = QtWidgets.QButtonGroup()
+        # Format listbox
+        self.format_list = QtWidgets.QListWidget()
+        self.format_list.itemSelectionChanged.connect(self._on_format_selected)
         
         for i, candidate in enumerate(self.candidates):
-            btn = self._create_format_button(candidate, i)
-            scroll_layout.addWidget(btn)
-            self.format_buttons[i] = btn
-            self.button_group.addButton(btn)
-            
-            # Select first (highest confidence) by default
-            if i == 0:
-                btn.setChecked(True)
+            key = candidate["key"]
+            score = candidate["score"]
+            notes = candidate.get("notes", "")
+            item_text = f"{key}  —  {notes}  [{score}%]"
+            item = QtWidgets.QListWidgetItem(item_text)
+            self.format_list.addItem(item)
         
-        scroll_layout.addStretch()
-        scroll_widget.setLayout(scroll_layout)
-        scroll.setWidget(scroll_widget)
-        layout.addWidget(scroll, 1)
+        # Select first item by default
+        if self.format_list.count() > 0:
+            self.format_list.setCurrentRow(0)
         
-        # Separator
-        sep2 = QtWidgets.QFrame()
-        sep2.setFrameShape(QtWidgets.QFrame.HLine)
-        sep2.setFrameShadow(QtWidgets.QFrame.Sunken)
-        layout.addWidget(sep2)
+        self.format_list.setMaximumHeight(150)
+        layout.addWidget(self.format_list, 0)
         
-        # Add details panel
-        layout.addWidget(self.details_label)
+        # ASCII Options Frame
+        ascii_group = QtWidgets.QGroupBox("ASCII Options")
+        ascii_layout = QtWidgets.QGridLayout()
         
-        # Button bar
+        # Delimiter
+        ascii_layout.addWidget(QtWidgets.QLabel("Delimiter (auto if blank):"), 0, 0)
+        self.delim_input = QtWidgets.QLineEdit()
+        self.delim_input.setMaximumWidth(80)
+        ascii_layout.addWidget(self.delim_input, 0, 1)
+        ascii_layout.addItem(QtWidgets.QSpacerItem(100, 0), 0, 2)
+        
+        # Column mapping
+        ascii_layout.addWidget(QtWidgets.QLabel("Columns (0-based): wave, flux, err (optional)"), 1, 0, 1, 3)
+        
+        # Wave column
+        ascii_layout.addWidget(QtWidgets.QLabel("wave:"), 2, 0)
+        self.col_wave = QtWidgets.QSpinBox()
+        self.col_wave.setValue(0)
+        self.col_wave.setMaximumWidth(60)
+        ascii_layout.addWidget(self.col_wave, 2, 1)
+        
+        # Flux column
+        ascii_layout.addWidget(QtWidgets.QLabel("flux:"), 3, 0)
+        self.col_flux = QtWidgets.QSpinBox()
+        self.col_flux.setValue(1)
+        self.col_flux.setMaximumWidth(60)
+        ascii_layout.addWidget(self.col_flux, 3, 1)
+        
+        # Error column
+        ascii_layout.addWidget(QtWidgets.QLabel("err:"), 4, 0)
+        self.col_err = QtWidgets.QLineEdit()
+        self.col_err.setMaximumWidth(60)
+        self.col_err.setPlaceholderText("blank for none")
+        ascii_layout.addWidget(self.col_err, 4, 1)
+        
+        ascii_layout.addItem(QtWidgets.QSpacerItem(0, 0), 5, 0, 1, 3)
+        ascii_group.setLayout(ascii_layout)
+        layout.addWidget(ascii_group, 0)
+        
+        self.ascii_frame = ascii_group
+        self._update_ascii_visibility()
+        
+        # Buttons
         button_layout = QtWidgets.QHBoxLayout()
         button_layout.addStretch()
         
-        load_btn = QtWidgets.QPushButton("Load")
-        load_btn.setFixedWidth(100)
-        load_btn.setDefault(True)
-        load_btn.clicked.connect(self.accept)
-        button_layout.addWidget(load_btn)
-        
         cancel_btn = QtWidgets.QPushButton("Cancel")
-        cancel_btn.setFixedWidth(100)
+        cancel_btn.setFixedWidth(80)
         cancel_btn.clicked.connect(self.reject)
         button_layout.addWidget(cancel_btn)
         
+        load_btn = QtWidgets.QPushButton("Load")
+        load_btn.setFixedWidth(80)
+        load_btn.setDefault(True)
+        load_btn.clicked.connect(self._on_load)
+        button_layout.addWidget(load_btn)
+        
         layout.addLayout(button_layout)
-        
-        # Connect button group signal
-        self.button_group.buttonClicked.connect(self._on_button_clicked)
-        
-        # NOW update details for the first selected item
-        self._on_format_selected(0)
         
         self.setLayout(layout)
     
-    def _create_format_button(self, candidate: Dict[str, Any], index: int) -> QtWidgets.QRadioButton:
-        """Create a format selection button with confidence score."""
-        key = candidate["key"]
-        score = candidate["score"]
-        notes = candidate.get("notes", "")
+    def _on_format_selected(self):
+        """Handle format selection from list."""
+        self._update_ascii_visibility()
+    
+    def _update_ascii_visibility(self):
+        """Show/hide ASCII options based on selected format."""
+        if self.format_list.currentRow() < 0:
+            self.ascii_frame.hide()
+            return
         
-        # Color code by confidence
-        if score >= 90:
-            color = "#4CAF50"  # Green
-            confidence = "High"
-        elif score >= 75:
-            color = "#FF9800"  # Orange
-            confidence = "Medium"
+        current_idx = self.format_list.currentRow()
+        fmt_key = self.candidates[current_idx]["key"]
+        
+        if fmt_key.startswith("ascii:"):
+            self.ascii_frame.show()
         else:
-            color = "#f44336"  # Red
-            confidence = "Low"
-        
-        # Create button with rich text
-        btn = QtWidgets.QRadioButton()
-        btn.setStyleSheet(f"""
-            QRadioButton {{
-                spacing: 10px;
-                font-size: 11px;
-            }}
-        """)
-        
-        # Create the label text
-        label_text = f"{key} ({confidence}: {score}%)"
-        btn.setText(label_text)
-        
-        # Store data
-        btn.candidate_index = index
-        btn.candidate_data = candidate
-        
-        # Tooltip with full notes
-        btn.setToolTip(notes)
-        
-        return btn
+            self.ascii_frame.hide()
     
-    def _on_button_clicked(self, button: QtWidgets.QRadioButton):
-        """Handle format button selection."""
-        index = button.candidate_index
-        self._on_format_selected(index)
-    
-    def _on_format_selected(self, index: int):
-        """Update details panel when format is selected."""
-        candidate = self.candidates[index]
+    def _on_load(self):
+        """Handle load button - validate and prepare result."""
+        if self.format_list.currentRow() < 0:
+            QtWidgets.QMessageBox.warning(self, "Error", "Please select a format")
+            return
         
-        key = candidate["key"]
-        score = candidate["score"]
-        notes = candidate.get("notes", "")
-        options = candidate.get("options", {})
+        current_idx = self.format_list.currentRow()
+        candidate = self.candidates[current_idx]
+        fmt = candidate["key"]
+        options = dict(candidate.get("options", {}))
         
-        # Build details text
-        details = f"<b>Format:</b> {key}<br>"
-        details += f"<b>Confidence:</b> {score}%<br>"
-        details += f"<b>Description:</b> {notes}<br>"
+        # Handle ASCII options if needed
+        if fmt.startswith("ascii:"):
+            delim = self.delim_input.text().strip()
+            if delim == "":
+                delim = options.get("delimiter", "\t")
+            
+            try:
+                wave_col = self.col_wave.value()
+                flux_col = self.col_flux.value()
+                err_str = self.col_err.text().strip()
+                err_col = int(err_str) if err_str else None
+            except ValueError:
+                QtWidgets.QMessageBox.warning(self, "Error", "Columns must be integers (err can be blank)")
+                return
+            
+            options.update({
+                "delimiter": delim,
+                "colmap": {"wave": wave_col, "flux": flux_col, "err": err_col}
+            })
+            # Force flexible reader if user edited mapping
+            fmt = "ascii:flex"
         
-        if options:
-            details += f"<b>Options:</b><br>"
-            for k, v in options.items():
-                details += f"&nbsp;&nbsp;{k}: {v}<br>"
-        
-        self.details_label.setText(details)
-        self.selected_format = key
+        self.selected_format = fmt
         self.selected_options = options
+        self.accept()
     
     def get_selection(self) -> Optional[Tuple[str, Dict[str, Any]]]:
         """
@@ -213,3 +211,4 @@ class FormatPickerDialog(QtWidgets.QDialog):
         if self.selected_format:
             return (self.selected_format, self.selected_options or {})
         return None
+
