@@ -1,0 +1,8 @@
+# SDSS Sky Lines
+# Reference: https://classic.sdss.org/dr6/algorithms/linestable.php
+# Format: wavelength (Angstroms), species name
+
+5578.5,Sky
+5894.6,Sky
+6301.7,Sky
+7246.0,Sky

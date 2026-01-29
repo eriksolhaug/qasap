@@ -1,12 +1,13 @@
 """
 Format Picker Dialog - PyQt5 based format selection UI
 
-Displays detected spectrum formats with confidence scores and allows user
+Displays detected spectrum formats and allows user
 to select the format before loading the spectrum.
 """
 
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtWidgets import QHeaderView
 from typing import Optional, Dict, Any, List, Tuple
 
 
@@ -14,7 +15,7 @@ class FormatPickerDialog(QtWidgets.QDialog):
     """
     Dialog for selecting spectrum file format from detected candidates.
     
-    Shows a list of auto-detected formats with confidence scores, descriptions,
+    Shows a list of auto-detected formats, descriptions,
     and allows user to select which one to use. For ASCII formats, provides
     delimiter and column mapping options.
     """
@@ -66,13 +67,11 @@ class FormatPickerDialog(QtWidgets.QDialog):
         
         # Format listbox
         self.format_list = QtWidgets.QListWidget()
-        self.format_list.itemSelectionChanged.connect(self._on_format_selected)
         
         for i, candidate in enumerate(self.candidates):
             key = candidate["key"]
-            score = candidate["score"]
             notes = candidate.get("notes", "")
-            item_text = f"{key}  —  {notes}  [{score}%]"
+            item_text = f"{key}  —  {notes}"
             item = QtWidgets.QListWidgetItem(item_text)
             self.format_list.addItem(item)
         
@@ -83,7 +82,19 @@ class FormatPickerDialog(QtWidgets.QDialog):
         self.format_list.setMaximumHeight(150)
         layout.addWidget(self.format_list, 0)
         
-        # ASCII Options Frame
+        # Columns information table
+        columns_label = QtWidgets.QLabel("Column Mapping:")
+        layout.addWidget(columns_label)
+        
+        self.columns_table = QtWidgets.QTableWidget()
+        self.columns_table.setColumnCount(4)
+        self.columns_table.setHorizontalHeaderLabels(["Col", "Description", "Import", "Used"])
+        self.columns_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.columns_table.setMaximumHeight(120)
+        self.columns_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        layout.addWidget(self.columns_table, 0)
+        
+        # ASCII Options Frame (create BEFORE connecting signals)
         ascii_group = QtWidgets.QGroupBox("ASCII Options")
         ascii_layout = QtWidgets.QGridLayout()
         
@@ -124,6 +135,10 @@ class FormatPickerDialog(QtWidgets.QDialog):
         
         self.ascii_frame = ascii_group
         self._update_ascii_visibility()
+        self._update_columns_display()  # Populate columns for initial selection
+        
+        # NOW connect the signal AFTER frame is created
+        self.format_list.itemSelectionChanged.connect(self._on_format_selected)
         
         # Buttons
         button_layout = QtWidgets.QHBoxLayout()
@@ -147,6 +162,69 @@ class FormatPickerDialog(QtWidgets.QDialog):
     def _on_format_selected(self):
         """Handle format selection from list."""
         self._update_ascii_visibility()
+        self._update_columns_display()
+    
+    def _update_columns_display(self):
+        """Update the columns table based on selected format."""
+        if self.format_list.currentRow() < 0:
+            self.columns_table.setRowCount(0)
+            return
+        
+        current_idx = self.format_list.currentRow()
+        candidate = self.candidates[current_idx]
+        options = candidate.get("options", {})
+        
+        # Clear table
+        self.columns_table.setRowCount(0)
+        
+        # Map format to column info
+        fmt_key = candidate["key"]
+        
+        if fmt_key.startswith("ascii:"):
+            # ASCII format - show detected columns
+            colmap = options.get("colmap", {})
+            delimiter = options.get("delimiter", "\t")
+            
+            row_data = [
+                ("0", "Wave/Lambda", "wav", "✓" if colmap.get("wave") == 0 else ""),
+                ("1", "Flux/Spectrum", "flux", "✓" if colmap.get("flux") == 1 else ""),
+                ("2", "Error", "err", "✓" if colmap.get("err") == 2 else ""),
+            ]
+            
+            self.columns_table.setRowCount(len(row_data))
+            for i, (col_idx, desc, import_name, used) in enumerate(row_data):
+                self.columns_table.setItem(i, 0, QtWidgets.QTableWidgetItem(col_idx))
+                self.columns_table.setItem(i, 1, QtWidgets.QTableWidgetItem(desc))
+                self.columns_table.setItem(i, 2, QtWidgets.QTableWidgetItem(import_name))
+                self.columns_table.setItem(i, 3, QtWidgets.QTableWidgetItem(used))
+        
+        elif fmt_key == "fits:image1d":
+            # FITS 1D image - show wavelength info
+            row_data = [
+                ("0", "Primary HDU", "wav", "✓"),
+                ("1", "Primary HDU", "flux", "✓"),
+            ]
+            self.columns_table.setRowCount(len(row_data))
+            for i, (col_idx, desc, import_name, used) in enumerate(row_data):
+                self.columns_table.setItem(i, 0, QtWidgets.QTableWidgetItem(col_idx))
+                self.columns_table.setItem(i, 1, QtWidgets.QTableWidgetItem(desc))
+                self.columns_table.setItem(i, 2, QtWidgets.QTableWidgetItem(import_name))
+                self.columns_table.setItem(i, 3, QtWidgets.QTableWidgetItem(used))
+        
+        elif "table" in fmt_key:
+            # FITS table - show detected columns
+            hdu = options.get("hdu", 1)
+            row_data = [
+                ("Wave", f"HDU {hdu}", "wav", "✓"),
+                ("Flux", f"HDU {hdu}", "flux", "✓"),
+                ("Error", f"HDU {hdu}", "err", "✓"),
+            ]
+            self.columns_table.setRowCount(len(row_data))
+            for i, (col_name, desc, import_name, used) in enumerate(row_data):
+                self.columns_table.setItem(i, 0, QtWidgets.QTableWidgetItem(col_name))
+                self.columns_table.setItem(i, 1, QtWidgets.QTableWidgetItem(desc))
+                self.columns_table.setItem(i, 2, QtWidgets.QTableWidgetItem(import_name))
+                self.columns_table.setItem(i, 3, QtWidgets.QTableWidgetItem(used))
     
     def _update_ascii_visibility(self):
         """Show/hide ASCII options based on selected format."""

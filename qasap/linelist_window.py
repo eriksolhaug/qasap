@@ -1,48 +1,158 @@
 """
-LineListWindow - Line list dialog window
+LineListWindow - Line list dialog window with dual-panel interface
 """
 
 from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtCore import Qt, pyqtSignal
+from typing import List, Optional
+from .linelist import LineList, Line
 
 
 class LineListWindow(QtWidgets.QWidget):
-    selected_line = QtCore.pyqtSignal(str, float)  # Signal to emit the selected line wavelength
-    closed = pyqtSignal()  # Define a custom signal for when the window closes
+    """
+    Dual-panel line selection window.
+    
+    Left panel: Available line lists
+    Right panel: Lines from selected line list
+    """
+    selected_line = QtCore.pyqtSignal(str, float)  # Signal: line_id, wavelength
+    closed = pyqtSignal()
 
-    def __init__(self, line_wavelengths, line_ids):
+    def __init__(self, available_line_lists: Optional[List[LineList]] = None, 
+                 line_wavelengths=None, line_ids=None):
+        """
+        Initialize the LineListWindow.
+        
+        Args:
+            available_line_lists: List of LineList objects (new interface)
+            line_wavelengths: Legacy parameter for backward compatibility
+            line_ids: Legacy parameter for backward compatibility
+        """
         super().__init__()
-        self.line_wavelengths = line_wavelengths
-        self.line_ids = line_ids
+        self.available_line_lists = available_line_lists or []
+        
+        # Handle legacy interface
+        if line_wavelengths and line_ids and not available_line_lists:
+            # Create a single LineList from legacy parameters
+            lines = [Line(wave=w, name=line_id) 
+                    for w, line_id in zip(line_wavelengths, line_ids)]
+            self.available_line_lists = [LineList(name="Lines", lines=lines)]
+        
+        self.selected_list: Optional[LineList] = None
         self.init_ui()
 
     def closeEvent(self, event):
-        self.closed.emit()  # Emit the signal when the window closes
-        event.accept()  # Accept the close event to proceed with closing
+        """Emit signal when window closes."""
+        self.closed.emit()
+        event.accept()
 
     def init_ui(self):
-        self.setWindowTitle("Line List")
-        self.setGeometry(100, 100, 300, 400)
+        """Initialize the user interface with dual panels."""
+        self.setWindowTitle("Line List Selector")
+        self.setGeometry(100, 100, 700, 500)
 
-        # Create a list widget to display lines
-        self.list_widget = QtWidgets.QListWidget(self)
-        for line_id, wavelength in zip(self.line_ids, self.line_wavelengths):
-            self.list_widget.addItem(f"{line_id}: {wavelength:.2f}")
+        # Main layout - horizontal split
+        main_layout = QtWidgets.QHBoxLayout()
+        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setSpacing(10)
 
-        self.list_widget.itemDoubleClicked.connect(self.item_selected)
+        # Create both panels first
+        left_panel = self._create_left_panel()
+        main_layout.addWidget(left_panel, 1)
 
-        # Layout
+        right_panel = self._create_right_panel()
+        main_layout.addWidget(right_panel, 1)
+
+        # Now connect the signal after both panels exist
+        self.linelist_widget.itemSelectionChanged.connect(self._on_linelist_selected)
+        
+        # Trigger initial population of right panel
+        if self.linelist_widget.count() > 0:
+            self.linelist_widget.setCurrentRow(0)
+
+        self.setLayout(main_layout)
+
+    def _create_left_panel(self) -> QtWidgets.QWidget:
+        """Create the left panel for line list selection."""
+        panel = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout()
-        layout.addWidget(self.list_widget)
-        self.setLayout(layout)
+        layout.setContentsMargins(0, 0, 0, 0)
 
-    def item_selected(self, item):
-        # Extract the selected wavelength from the item text
+        # Label
+        label = QtWidgets.QLabel("Line Lists:")
+        label.setStyleSheet("font-weight: bold;")
+        layout.addWidget(label)
+
+        # List widget for available line lists
+        self.linelist_widget = QtWidgets.QListWidget()
+        
+        # Populate with available line lists
+        for line_list in self.available_line_lists:
+            display_name = f"{line_list.name} ({len(line_list.lines)} lines)"
+            item = QtWidgets.QListWidgetItem(display_name)
+            item.setData(QtCore.Qt.UserRole, line_list)  # Store the LineList object
+            self.linelist_widget.addItem(item)
+        
+        layout.addWidget(self.linelist_widget)
+        panel.setLayout(layout)
+        return panel
+
+    def _create_right_panel(self) -> QtWidgets.QWidget:
+        """Create the right panel for displaying lines from selected list."""
+        panel = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        # Label
+        label = QtWidgets.QLabel("Lines:")
+        label.setStyleSheet("font-weight: bold;")
+        layout.addWidget(label)
+
+        # List widget for lines
+        self.lines_widget = QtWidgets.QListWidget()
+        self.lines_widget.itemDoubleClicked.connect(self._on_line_selected)
+        layout.addWidget(self.lines_widget)
+
+        panel.setLayout(layout)
+        return panel
+
+    def _on_linelist_selected(self):
+        """Handle line list selection change."""
+        current_item = self.linelist_widget.currentItem()
+        if not current_item:
+            self.lines_widget.clear()
+            return
+
+        # Get the selected LineList
+        self.selected_list = current_item.data(QtCore.Qt.UserRole)
+        
+        # Update right panel with lines from selected list
+        self.lines_widget.clear()
+        if self.selected_list:
+            for line in self.selected_list.lines:
+                item_text = f"{line.name}: {line.wave:.2f} Å"
+                self.lines_widget.addItem(item_text)
+
+    def _on_line_selected(self, item):
+        """Handle line selection from the lines list."""
+        if not self.selected_list:
+            return
+
+        # Extract wavelength from item text
         text = item.text()
-        line_id = text.split(': ')[0]  # Get the line ID
-        wavelength = float(text.split(': ')[1].split()[0])  # Get the wavelength in AA
-        self.selected_line.emit(line_id, wavelength)  # Emit the signal with the selected wavelength
-        self.close()  # Close the window after selection
+        try:
+            # Format: "name: wavelength Å"
+            parts = text.split(': ')
+            line_name = parts[0]
+            wavelength_str = parts[1].replace(' Å', '')
+            wavelength = float(wavelength_str)
+            
+            # Emit signal and close
+            self.selected_line.emit(line_name, wavelength)
+            self.close()
+        except (ValueError, IndexError):
+            print(f"Error parsing line: {text}")
+
 
 def main():
     # Parse command-line arguments
@@ -53,11 +163,6 @@ def main():
     parser.add_argument('--file_flag', type=int, default=0, help='File flag (default: 0)')
     parser.add_argument('--lsf', type=str, default="10", help='Line spread function: float width in km/s or path to LSF file')
     parser.add_argument('--gui', action='store_true', help='Launch the GUI for interactive input')
-    parser.add_argument('--alfosc', action='store_true', help='Load ALFOSC 2D spectrum and wavelength solution to yield 1D spectrum')
-    parser.add_argument('--alfosc_bin', type=int, help='ALFOSC desired 1D binning in Angstroms')
-    parser.add_argument('--alfosc_left', type=int, help="Left x-bound (inclusive)")
-    parser.add_argument('--alfosc_right', type=int, help="Right x-bound (exclusive)")
-    parser.add_argument('--alfosc_output',type=str, help="Path to save extracted 1D spectrum as text file")
     args = parser.parse_args()
 
     # Initialize QApplication (importantly, initialize this before the SpectrumPlotter)
@@ -73,11 +178,10 @@ def main():
         opener_window = SpectrumPlotterApp(plotter)
         opener_window.show()
 
-    print("alfosc:", args.alfosc)# DEBUG
     # Handle file processing from command line if not using the GUI
     if args.fits_file:
         print(f"Opening file: {args.fits_file}")
-        plotter = SpectrumPlotter(args.fits_file, args.redshift, args.zoom_factor, args.file_flag, args.alfosc, args.alfosc_bin, args.alfosc_left, args.alfosc_right, args.alfosc_output)
+        plotter = SpectrumPlotter(args.fits_file, args.redshift, args.zoom_factor, args.file_flag)
         plotter.plot_spectrum()
     else:
         print("No FITS file provided. Please specify a file or use the GUI.")

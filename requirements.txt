@@ -7,3 +7,4 @@ lmfit>=0.10.0
 PyQt5>=5.9.0
 emcee>=3.0.0
 corner>=2.1.0
+

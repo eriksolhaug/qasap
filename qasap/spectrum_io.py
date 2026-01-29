@@ -255,8 +255,7 @@ class SpectrumIO:
         
         if err is not None:
             err = np.asarray(err)
-        else:
-            err = np.abs(flux) * 0.10  # 10% as placeholder
+        # else: err stays None - no automatic error creation
         
         wave_unit = {"a": "Å", "angstrom": "Å", "nm": "nm", "um": "µm", "μm": "µm"}.get(
             (str(units).lower() if units else "a"), "Å")
@@ -302,8 +301,8 @@ class SpectrumIO:
             cdelt1 = header.get('CDELT1', 1)
             wav = crval1 + (np.arange(len(spec)) - (crpix1 - 1)) * cdelt1
             
-            # Error from noise or 10% of signal
-            err = np.ones_like(spec) * np.nanstd(spec) * 0.1
+            # No automatic error creation - leave as None
+            err = None
             
             meta = {
                 "source": "fits:image1d",
@@ -353,7 +352,7 @@ class SpectrumIO:
                     ivar = np.asarray(rec[iname], dtype=float)
                     err = np.sqrt(1.0 / np.where(ivar > 0, ivar, 1e-10))
                 except Exception:
-                    err = np.abs(flux) * 0.10
+                    err = None  # No error or ivar available
             
             meta = {
                 "source": "fits:table:vector",
@@ -401,7 +400,7 @@ class SpectrumIO:
                     ivar = np.asarray(data[iname], dtype=float)
                     err = np.sqrt(1.0 / np.where(ivar > 0, ivar, 1e-10))
                 except Exception:
-                    err = np.abs(flux) * 0.10
+                    err = None  # No error or ivar available
             
             meta = {
                 "source": "fits:table:columns",
@@ -441,7 +440,7 @@ class SpectrumIO:
                         ivar = np.asarray(rec0[iname], dtype=float)
                         err = np.sqrt(1.0 / np.where(ivar > 0, ivar, 1e-10))
                     except Exception:
-                        err = np.abs(flux) * 0.10
+                        err = None  # No error or ivar available
                 
                 meta = {
                     "source": "fits:ext:spectrum",

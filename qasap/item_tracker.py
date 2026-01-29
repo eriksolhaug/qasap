@@ -20,11 +20,16 @@ class ItemTracker(QtWidgets.QWidget):
     """Window for tracking and managing plotted spectrum features"""
     
     item_deleted = pyqtSignal(str)  # Emits item_id when deleted
+    item_selected = pyqtSignal(str)  # Emits item_id when selected
+    item_individually_deselected = pyqtSignal(str)  # Emits item_id when individually deselected from multi-selection
+    item_deselected = pyqtSignal()   # Emits when no items are selected
+    estimate_redshift = pyqtSignal(str)  # Emits item_id when estimate redshift is selected
     
     def __init__(self):
         super().__init__()
         self.items = {}  # {item_id: {'type': 'gaussian', 'name': 'Gaussian 1', 'position': 'bounds or value', 'color': 'red', ...}}
         self.item_table = None
+        self.previously_selected_ids = set()  # Track previously selected items to detect changes
         self.init_ui()
     
     def init_ui(self):
@@ -45,6 +50,7 @@ class ItemTracker(QtWidgets.QWidget):
         self.item_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.item_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.item_table.customContextMenuRequested.connect(self.show_context_menu)
+        self.item_table.itemSelectionChanged.connect(self.on_selection_changed)
         self.item_table.horizontalHeader().setStretchLastSection(False)
         self.item_table.setColumnWidth(0, 150)
         self.item_table.setColumnWidth(1, 100)
@@ -108,12 +114,68 @@ class ItemTracker(QtWidgets.QWidget):
     
     def show_context_menu(self, position):
         """Show right-click context menu"""
+        # Get the clicked row
+        row = self.item_table.rowAt(position.y())
+        if row < 0:
+            return
+        
+        # Get the item being right-clicked
+        item = self.item_table.item(row, 0)
+        if not item:
+            return
+        
+        item_id = item.data(Qt.UserRole)
+        item_type = self.items[item_id]['type'] if item_id in self.items else None
+        
         menu = QtWidgets.QMenu()
+        
+        # Add estimate redshift option for Gaussians and Voigts
+        estimate_redshift_action = None
+        if item_type in ['gaussian', 'voigt']:
+            estimate_redshift_action = menu.addAction("Estimate Redshift")
+            menu.addSeparator()
+        
         delete_action = menu.addAction("Delete")
         
         action = menu.exec_(self.item_table.mapToGlobal(position))
         if action == delete_action:
             self.delete_selected()
+        elif estimate_redshift_action and action == estimate_redshift_action:
+            self.estimate_redshift.emit(item_id)
+    
+    def on_selection_changed(self):
+        """Handle item selection in the table - only emit for actual changes"""
+        # Get currently selected row indices
+        selected_rows = set(index.row() for index in self.item_table.selectedIndexes())
+        
+        # Get the item IDs for currently selected rows
+        current_selected_ids = set()
+        for row in selected_rows:
+            item = self.item_table.item(row, 0)
+            if item:
+                item_id = item.data(Qt.UserRole)
+                current_selected_ids.add(item_id)
+        
+        # Find newly selected items (not in previous selection)
+        newly_selected = current_selected_ids - self.previously_selected_ids
+        
+        # Emit signals only for newly selected items
+        for item_id in newly_selected:
+            self.item_selected.emit(item_id)
+        
+        # Find individually deselected items (were selected but not anymore)
+        individually_deselected = self.previously_selected_ids - current_selected_ids
+        
+        # Emit signals for individually deselected items
+        for item_id in individually_deselected:
+            self.item_individually_deselected.emit(item_id)
+        
+        # If nothing is selected now, but something was selected before, emit full deselection
+        if not current_selected_ids and self.previously_selected_ids:
+            self.item_deselected.emit()
+        
+        # Update tracking for next call
+        self.previously_selected_ids = current_selected_ids
     
     def delete_selected(self):
         """Delete selected items"""

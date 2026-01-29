@@ -52,7 +52,7 @@ python qasap.py spectrum.fits
 
 ```bash
 # Automatic format detection
-python qasap.py spectrum.fits --redshift 0.5
+python qasap.py spectrum.fits
 
 # Preview detected formats
 python qasap.py spectrum.fits --detect
@@ -78,13 +78,53 @@ python qasap.py spectrum.fits --fmt fits:image1d
 ```
 --fmt              Force format (auto-detects if omitted)
 --detect           Show detected formats and exit
---redshift         Initial redshift (default: 0.0)
---zoom_factor      Y-axis zoom (default: 0.1)
---lsf              LSF width in km/s or path to file (default: "10")
+--redshift         Initial redshift for displaying line lists (default: 0.0)
+--zoom_factor      Y-axis zoom for `y` key (default: 0.1)
+--lsf              LSF width in km/s or path to file (default: "10", in development)
 --gui              Launch GUI for interactive input
 ```
 
-## Project Structure
+### Making `qasap` Executable
+
+To run QASAP from anywhere as a simple `qasap` command:
+
+1. **Make the script executable:** (run from inside the `qasap/` directory where the `qasap.py` script is)
+   ```bash
+   chmod +x qasap.py
+   ```
+
+2. **Ensure the shebang line is present** (should already be at the top of qasap.py):
+   ```python
+   #!/usr/bin/env python
+   ```
+
+3. **Create a symlink or add to PATH:**
+
+   **Option A: Create a symlink in a directory on your PATH**
+   ```bash
+   # Find your qasap installation path
+   QASAP_PATH=$(pwd)/qasap.py
+   
+   # Link to a bin directory in your PATH (example: /usr/local/bin)
+   sudo ln -s $QASAP_PATH /usr/local/bin/qasap
+   ```
+
+   **Option B: Add qasap directory to PATH** (recommended for development)
+   ```bash
+   # Add this line to your shell profile (~/.bash_profile, ~/.zshrc, etc.)
+   export PATH="/path/to/qasap/qasap:$PATH"
+   
+   # Then create a shell script wrapper at qasap/qasap:
+   #!/bin/bash
+   exec python /path/to/qasap/qasap/qasap.py "$@"
+   ```
+
+4. **Test:**
+   ```bash
+   qasap ~/path/to/spectrum.fits
+   ```
+
+## Package Structure
 
 ```
 qasap/
@@ -92,22 +132,37 @@ qasap/
   ├── qasap.py                 # Main entry point
   ├── spectrum_io.py           # File I/O with auto-detection
   ├── spectrum_analysis.py     # Fitting and analysis functions
-  ├── spectrum_plotter.py      # Main visualization widget (~4500 lines)
+  ├── spectrum_plotter.py      # Main visualization widget (~4600 lines)
   ├── spectrum_plotter_app.py  # Application wrapper
   ├── ui_components.py         # UI component exports
   ├── linelist_window.py       # Line identification window
+  ├── linelist_selector_window.py # Line list management UI
+  ├── linelist.py              # Line list data structures
   ├── listfit_window.py        # Multi-component fitting dialog
   ├── item_tracker.py          # Component tracking and management
-  ├── emlines.txt              # Emission line catalog
-  ├── emlines_osc.txt          # Emission lines with oscillator strengths
-  └── instrument_bands.txt     # Filter/instrument band definitions
+  ├── format_picker_dialog.py  # Format selection dialog
+  └── resources/
+      ├── linelist/            # Line list catalogs
+      │   ├── emlines.txt
+      │   ├── emlines_osc.txt
+      │   ├── sdss_emission.txt
+      │   ├── sdss_absorption.txt
+      │   └── sdss_sky.txt
+      └── bands/               # Instrument band definitions
+          └── instrument_bands.txt
 ```
 
 ## Data Files
 
+**Line Lists** (in `resources/linelist/`):
 - `emlines.txt`: Emission line catalog
 - `emlines_osc.txt`: Lines with oscillator strengths
-- `instrument_bands.txt`: Filter definitions
+- `sdss_emission.txt`: SDSS emission line catalog
+- `sdss_absorption.txt`: SDSS stellar absorption features
+- `sdss_sky.txt`: Telluric sky emission lines
+
+**Instrument Bands** (in `resources/bands/`):
+- `instrument_bands.txt`: Filter and instrument bandpass definitions
 
 
 ## User Interface Windows
@@ -123,7 +178,7 @@ The central interactive spectrum visualization with the following controls:
 - Redshift tracking with selected line highlighting
 
 **Keyboard Shortcuts:**
-- `e`: Toggle emission line display
+- `e`: Open LineList Window for line identification
 - `z`: Enter redshift mode (select already fitted emission line to estimate redshift)
 - `g`: Single Gaussian fitting mode
 - `v`: Single Voigt profile fitting mode
@@ -150,19 +205,48 @@ Displays real-time analysis information and fitting parameters:
 - **Redshift**: Set redshift for displayed emission lines (toggled with key `e`)
 - **Polynomial Order**: Set the order for the polynomial for Continuum mode (with key `m`)
 
-### 3. Linelist Window
-Database browser for emission and absorption lines:
+### 3. LineList Window
+Interactive line identification and management interface for viewing and selecting spectral lines:
 
-**Features:**
-- Searchable catalog of common emission lines (H-alpha, H-beta, [OIII], [OII], Ly-alpha, etc.)
-- Rest wavelength reference
-- Line identification at current redshift
-- Click to jump to line in spectrum
-- Filter by line type or wavelength range
+**Access:**
+- Press `e` on the spectrum to open the LineList Window
+- Provides access to multiple line list catalogs
 
-**Usage:**
-- Select a line to overlay on spectrum
-- Double-click to center spectrum on line at current redshift
+**Line Lists:**
+- **emlines.txt**: Common emission lines (Hα, Hβ, [OIII], [OII], Ly-α, etc.)
+- **emlines_osc.txt**: Emission lines with oscillator strength data
+- **instrument_bands.txt**: Instrument and filter bandpass definitions
+- **sdss_emission.txt**: SDSS emission line catalog
+- **sdss_absorption.txt**: SDSS stellar absorption features
+- **sdss_sky.txt**: Telluric sky emission lines
+
+**Interface:**
+The LineList Window uses a dual-panel design:
+
+**Left Panel - Line List Selection:**
+- Displays all available line list catalogs with line counts
+- Format: `{ListName} ({count} lines)`
+- Scrollable
+- Click to select a line list and view its contents
+
+**Right Panel - Lines Display:**
+- Dynamically populates when you select a line list from the left panel
+- Shows all lines in the format: `{LineName}: {Wavelength} Å`
+- Scrollable
+- Double-click a line to select it for redshift estimation
+
+**Workflow:**
+1. Press `e` to open LineList Window
+2. Select a line list from the left panel (e.g., "sdss_emission.txt")
+3. Right panel populates with all lines from that list
+4. Double-click a line (e.g., "H alpha: 6564.61 Å")
+5. Window closes and redshift is estimated from the selected line (see terminal for output)
+
+**Redshift Integration:**
+Lines in the spectrum automatically update when redshift is changed via:
+- Manual entry in Control Panel
+- Arrow buttons in the LineList Window
+- Automatic redshift estimation from fitted components (`z` key)
 
 ### 4. Listfit Window (Multi-Component Fitting)
 Dialog for simultaneous fitting of multiple spectral components:

@@ -47,18 +47,6 @@ Examples:
     parser.add_argument('--redshift', type=float, default=0.0,
                         help='Redshift value')
     
-    # ALFOSC extraction options
-    parser.add_argument('--alfosc', action='store_true',
-                        help='Extract 1D spectrum from 2D ALFOSC data')
-    parser.add_argument('--bin', type=int, default=10,
-                        help='Bin width in pixels for ALFOSC extraction (default: 10)')
-    parser.add_argument('--left', type=int, default=None,
-                        help='Left pixel bound for ALFOSC extraction')
-    parser.add_argument('--right', type=int, default=None,
-                        help='Right pixel bound for ALFOSC extraction')
-    parser.add_argument('--output', type=str, default=None,
-                        help='Output file for extracted spectrum')
-    
     # LSF handling
     parser.add_argument('--lsf', type=str, default=None,
                         help='Line Spread Function: FWHM in km/s or path to LSF file')
@@ -78,32 +66,6 @@ Examples:
         for i, c in enumerate(candidates, 1):
             print(f"{i}. {c['key']:<25} Score: {c['score']:>3}  {c['notes']}")
         print()
-        sys.exit(0)
-    
-    # Handle ALFOSC extraction
-    if args.alfosc:
-        if not args.fits_file:
-            print("Error: --alfosc requires a spectrum file")
-            sys.exit(1)
-        try:
-            print(f"Extracting 1D spectrum from ALFOSC 2D data: {args.fits_file}")
-            wav, flux, output_path = SpectrumIO.extract_1d_from_2d_alfosc(
-                args.fits_file,
-                bin_width=args.bin,
-                left_bound=args.left,
-                right_bound=args.right,
-                output_file=args.output
-            )
-            print(f"Successfully extracted {len(wav)} wavelength points")
-            print(f"Wavelength range: {wav[0]:.2f} - {wav[-1]:.2f} Å")
-            print(f"Flux range: {np.min(flux):.2e} - {np.max(flux):.2e}")
-            if output_path:
-                print(f"Saved to: {output_path}")
-        except Exception as e:
-            print(f"Error: {e}")
-            import traceback
-            traceback.print_exc()
-            sys.exit(1)
         sys.exit(0)
     
     # Load spectrum
@@ -127,29 +89,24 @@ Examples:
                     print("Error: Could not auto-detect format")
                     sys.exit(1)
                 
-                # If multiple candidates, show dialog; if only one, use it
-                if len(candidates) > 1:
-                    print(f"Detected {len(candidates)} possible formats. Showing selection dialog...")
-                    dialog = FormatPickerDialog(args.fits_file, candidates)
-                    result = dialog.exec_()
-                    
-                    if result != QtWidgets.QDialog.Accepted:
-                        print("Format selection cancelled")
-                        sys.exit(0)
-                    
-                    selection = dialog.get_selection()
-                    if not selection:
-                        print("No format selected")
-                        sys.exit(0)
-                    
-                    fmt, options = selection
-                    print(f"Selected format: {fmt}")
-                else:
-                    # Only one candidate - use it without dialog
-                    best = candidates[0]
-                    fmt = best["key"]
-                    options = best.get("options", {})
-                    print(f"Auto-detected: {fmt} (confidence: {best['score']}/100)")
+                # If multiple candidates, show dialog; always show for clarity
+                print(f"\nShowing format selection dialog...\n")
+                dialog = FormatPickerDialog(args.fits_file, candidates, parent=None)
+                print("DEBUG: Dialog created successfully")
+                result = dialog.exec_()
+                print(f"DEBUG: Dialog result: {result}")
+                
+                if result != QtWidgets.QDialog.Accepted:
+                    print("Format selection cancelled")
+                    sys.exit(0)
+                
+                selection = dialog.get_selection()
+                if not selection:
+                    print("No format selected")
+                    sys.exit(0)
+                
+                fmt, options = selection
+                print(f"Selected format: {fmt}\n")
             
             # Load the spectrum with selected format
             wav, spec, err, meta = SpectrumIO.read_spectrum(args.fits_file, fmt=fmt, options=options)
@@ -197,11 +154,6 @@ Examples:
                 redshift=args.redshift,
                 zoom_factor=0.1,
                 file_flag=file_flag,
-                alfosc=args.alfosc,
-                alfosc_bin=args.bin,
-                alfosc_left=args.left or 0,
-                alfosc_right=args.right or 0,
-                alfosc_output=args.output or "",
                 lsf=args.lsf or "10"
             )
             # Show control panel and create the spectrum plot

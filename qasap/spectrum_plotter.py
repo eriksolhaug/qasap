@@ -6,6 +6,7 @@ Main spectrum plotter widget for interactive spectral analysis
 import argparse
 import os
 import sys
+import warnings
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -27,13 +28,18 @@ from datetime import datetime
 import ast
 import re
 
+# Suppress numexpr pandas UserWarning
+warnings.filterwarnings('ignore', category=UserWarning, module='pandas.core.computation.expressions')
+
 # Import LineListWindow from sibling module
 from .linelist_window import LineListWindow
 from .listfit_window import ListfitWindow
 from .item_tracker import ItemTracker
+from .linelist import get_available_line_lists
+from .linelist_selector_window import LineListSelector
 
 class SpectrumPlotter(QtWidgets.QWidget):
-    def __init__(self, fits_file, redshift=0.0, zoom_factor=0.1, file_flag=0, alfosc=False, alfosc_bin=10, alfosc_left=0, alfosc_right=0, alfosc_output="", lsf="10",):
+    def __init__(self, fits_file, redshift=0.0, zoom_factor=0.1, file_flag=0, lsf="10",):
         super().__init__()
 
         self.fits_file = fits_file
@@ -43,13 +49,6 @@ class SpectrumPlotter(QtWidgets.QWidget):
         self.lsf = lsf
         self.lsf_kernel_x = None
         self.lsf_kernel_y = None
-        self.alfosc = alfosc
-        print("alfosc:",self.alfosc)#DEBUG
-        self.alfosc_bin = alfosc_bin
-        print("alfosc_bin:",self.alfosc_bin)#DEBUG
-        self.alfosc_left = alfosc_left
-        self.alfosc_right = alfosc_right
-        self.alfosc_output = alfosc_output
 
         # Process LSF
         self.process_lsf(lsf)
@@ -166,6 +165,16 @@ class SpectrumPlotter(QtWidgets.QWidget):
         self.item_tracker = ItemTracker()
         self.item_id_counter = 0
         self.item_id_map = {}  # Maps item_id to {'type': 'gaussian', 'fit': fit_dict, ...}
+        self.highlighted_item_ids = set()  # Track all currently highlighted items
+        self.original_colors = {}  # Store original colors for restoration: {item_id: color}
+        self.redshift_selected_line = None  # Track the line object selected for redshift
+        
+        # Line List Selector
+        resources_dir = os.path.join(os.path.dirname(__file__), '..', 'resources', 'linelist')
+        self.line_list_selector = None  # Will be created on demand
+        self.resources_dir = resources_dir
+        self.active_line_lists = []  # {linelist: LineList, color: str}
+        self.current_linelist_lines = []  # Store plotted linelist lines for removal
 
     def init_controlpanel(self):
         # Set main window title and geometry
@@ -245,10 +254,17 @@ class SpectrumPlotter(QtWidgets.QWidget):
         """Adjust redshift by a specified delta value and update the input field."""
         self.redshift += delta
         self.input_redshift.setText(f"{self.redshift:.6f}")  # Update input field with new redshift
+        
+        # Redisplay active line lists with new redshift
+        if self.active_line_lists:
+            self.display_linelist()
+        
+        # Also handle legacy linelist_plots for backwards compatibility
         if self.linelist_plots:
             self.clear_linelist()
-            self.display_linelist() # Re-display linelist
-            self.fig.canvas.draw_idle()  # Redraw the figure to update the display
+            self.display_linelist()
+        
+        self.fig.canvas.draw_idle()  # Redraw the figure to update the display
 
     def apply_changes(self):
         """Apply changes based on user input for redshift and zoom factor."""
@@ -263,154 +279,19 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 print(f"Polynomial order set to: {self.poly_order}")
             
             print(f"Applied Redshift: {self.redshift}, Zoom Factor: {self.zoom_factor}")
+            
+            # Redisplay active line lists with new redshift
+            if self.active_line_lists:
+                self.display_linelist()
+            
+            # Also handle legacy linelist_plots for backwards compatibility
             if self.linelist_plots:
                 self.clear_linelist()
-                self.display_linelist() # Re-display linelist
-                self.fig.canvas.draw_idle()  # Redraw the figure to update the display
+                self.display_linelist()
+            
+            self.fig.canvas.draw_idle()  # Redraw the figure to update the display
         except ValueError:
             print("Invalid input for redshift, zoom factor, or polynomial order. Please enter numerical values.")
-
-    def extract_1d_spectrum(self):
-        # Load FITS files
-        with fits.open(self.fits_file) as hdul:
-            spectrum_data = hdul[1].data # Spectrum in 1th (0th index) slice
-            wavelength_data = hdul[8].data # Wavelength solution in 8th (7th index) slice
-            # spectrum_data = fits.getdata(self.fits_file)
-            # wavelength_data = fits.getdata(self.alfosc_wav)
-
-        # Validate shapes
-        # if spectrum_data.shape != wavelength_data.shape:
-        #     raise ValueError("Spectrum and wavelength FITS files must have the same shape.")
-        print("spectrum_data",spectrum_data)
-        print("wavelength_data",wavelength_data)
-
-        # Check bounds
-        ny, nx = spectrum_data.shape
-        if not (0 <= self.alfosc_left < self.alfosc_right <= nx):
-            raise ValueError(f"x_left and x_right must be in range [0, {nx}]")
-
-        # Slice and average along y-axis within x-bounds
-        sub_spectrum = spectrum_data[:, self.alfosc_left:self.alfosc_right]
-        sub_wavelength = wavelength_data[:, self.alfosc_left:self.alfosc_right]
-
-        spectrum_1d = np.nanmean(sub_spectrum, axis=1)
-        wavelength_1d = np.nanmean(sub_wavelength, axis=1)
-
-        # Save to text file if requested
-        if self.alfosc_output:
-            np.savetxt(self.alfosc_output, np.column_stack([wavelength_1d, spectrum_1d]), header="wavelength flux")
-            print(f"ALFOSC 1D spectrum created: {self.alfosc_output}")
-        else:
-            print(f"ALFOSC 1D spectrum not created. Please specify the ALFOSC")
-
-    def extract_1d_spectrum_binned(self):
-        # Load FITS files
-        with fits.open(self.fits_file) as hdul:
-            spectrum_data = hdul[1].data.flatten() # Spectrum in 1th (0th index) slice
-            wavelength_data = hdul[8].data.flatten() # Wavelength solution in 8th (7th index) slice
-
-        print("spectrum_data",spectrum_data)
-        print("wavelength_data",wavelength_data)
-        
-        # Bin the data into specified wavelength bins
-        print("alfosc_bin:",self.alfosc_bin)#DEBUG
-        bin_size = self.alfosc_bin
-        print(f"Applying 1D spectrum binning of {bin_size} Angstroms")
-        # Remove wavelength indices that are zero
-        wavelength_data = np.where(wavelength_data != 0, wavelength_data, 5000)
-        spectrum_data = np.where(wavelength_data != 0, wavelength_data, 5000)
-        print("min(wavelength_data)",min(wavelength_data))
-        print("wavelength_data:",wavelength_data)
-        # print("notzero_indices:", notzero_indices)
-        # wavelength_data = wavelength_data[notzero_indices]
-        # spectrum_data = spectrum_data[notzero_indices]
-        # Sort bin
-        sorted_indices = np.argsort(wavelength_data)
-        wavelength_sorted = wavelength_data[sorted_indices]
-        flux_sorted = spectrum_data[sorted_indices]
-        print("Sorted wavelength:", wavelength_sorted)
-        binned_wavelength = []
-        binned_flux = []
-        # for i in range(0, len(wavelength_sorted), bin_size):
-        #     bin_wavelength = wavelength_sorted[i:i + bin_size]
-        #     bin_flux = flux_sorted[i:i + bin_size]
-        #     binned_wavelength.append(bin_wavelength.mean())
-        #     binned_flux.append(np.median(bin_flux))
-        binned_wavelength_left, binned_wavelength_right = np.arange(int(np.min(wavelength_sorted)), int(np.max(wavelength_sorted)), bin_size), np.arange(bin_size + int(np.min(wavelength_sorted)), bin_size + int(np.max(wavelength_sorted)), bin_size+bin_size)
-        print("binned_wavelength_left:", binned_wavelength_left)
-        print("binned_wavelength_right:", binned_wavelength_right)
-        # Take wavelength bin and find the flux pixels that have corresponding wavelength pixels that are within the wavelength bin and take the median and add that to the binned flux array.
-        for idx_bin in binned_wavelength_left: # Loop through bins to see what pixels should be included in that bin
-            temp_flux_vals = []
-            for idx, wavelength in enumerate(wavelength_sorted): # Loop through pixels to see what pixels are inside the bin
-                if (binned_wavelength_left[idx_bin] < wavelength) and (wavelength < binned_wavelength_right[idx_bin]):
-                    temp_flux_vals.append(flux_sorted[idx])
-            binned_flux.append(np.median(temp_flux_vals))
-        # Store the binned spectrum
-        wavelength_1d = np.array(binned_wavelength)
-        spectrum_1d = np.array(binned_flux)
-
-        # Save to text file if requested
-        if self.alfosc_output:
-            np.savetxt(self.alfosc_output, np.column_stack([wavelength_1d, spectrum_1d]), header="wavelength flux")
-            print(f"ALFOSC 1D spectrum created: {self.alfosc_output}")
-        else:
-            print(f"ALFOSC 1D spectrum not created. Please specify the ALFOSC")
-
-    def extract_1d_spectrum_trace(self):
-        # Load FITS files
-        with fits.open(self.fits_file) as hdul:
-            spectrum_data = hdul[1].data.flatten() # Spectrum in 1th (0th index) slice
-            wavelength_data = hdul[8].data.flatten() # Wavelength solution in 8th (7th index) slice
-
-        print("spectrum_data",spectrum_data)
-        print("wavelength_data",wavelength_data)
-        
-        # Bin the data into specified wavelength bins
-        print("alfosc_bin:",self.alfosc_bin)#DEBUG
-        bin_size = self.alfosc_bin
-        print(f"Applying 1D spectrum binning of {bin_size} Angstroms")
-        # Remove wavelength indices that are zero
-        wavelength_data = np.where(wavelength_data != 0, wavelength_data, 5000)
-        spectrum_data = np.where(wavelength_data != 0, wavelength_data, 5000)
-        print("min(wavelength_data)",min(wavelength_data))
-        print("wavelength_data:",wavelength_data)
-        # print("notzero_indices:", notzero_indices)
-        # wavelength_data = wavelength_data[notzero_indices]
-        # spectrum_data = spectrum_data[notzero_indices]
-        # Sort bin
-        sorted_indices = np.argsort(wavelength_data)
-        wavelength_sorted = wavelength_data[sorted_indices]
-        flux_sorted = spectrum_data[sorted_indices]
-        print("Sorted wavelength:", wavelength_sorted)
-        binned_wavelength = []
-        binned_flux = []
-        # for i in range(0, len(wavelength_sorted), bin_size):
-        #     bin_wavelength = wavelength_sorted[i:i + bin_size]
-        #     bin_flux = flux_sorted[i:i + bin_size]
-        #     binned_wavelength.append(bin_wavelength.mean())
-        #     binned_flux.append(np.median(bin_flux))
-        binned_wavelength_left, binned_wavelength_right = np.arange(int(np.min(wavelength_sorted)), int(np.max(wavelength_sorted)), bin_size), np.arange(bin_size + int(np.min(wavelength_sorted)), bin_size + int(np.max(wavelength_sorted)), bin_size+bin_size)
-        print("binned_wavelength_left:", binned_wavelength_left)
-        print("binned_wavelength_right:", binned_wavelength_right)
-        # Take wavelength bin and find the flux pixels that have corresponding wavelength pixels that are within the wavelength bin and take the median and add that to the binned flux array.
-        for idx_bin in binned_wavelength_left: # Loop through bins to see what pixels should be included in that bin
-            temp_flux_vals = []
-            for idx, wavelength in enumerate(wavelength_sorted): # Loop through pixels to see what pixels are inside the bin
-                if (binned_wavelength_left[idx_bin] < wavelength) and (wavelength < binned_wavelength_right[idx_bin]):
-                    temp_flux_vals.append(flux_sorted[idx])
-            binned_flux.append(np.median(temp_flux_vals))
-        # Store the binned spectrum
-        wavelength_1d = np.array(binned_wavelength)
-        spectrum_1d = np.array(binned_flux)
-
-        # Save to text file if requested
-        if self.alfosc_output:
-            np.savetxt(self.alfosc_output, np.column_stack([wavelength_1d, spectrum_1d]), header="wavelength flux")
-            print(f"ALFOSC 1D spectrum created: {self.alfosc_output}")
-        else:
-            print(f"ALFOSC 1D spectrum not created. Please specify the ALFOSC")
-
 
     def plot_spectrum(self):
         # Read lines and instrument bands
@@ -420,12 +301,6 @@ class SpectrumPlotter(QtWidgets.QWidget):
 
         # Find title from file name
         title = os.path.basename(self.fits_file)
-
-        # ALFOSC functionality
-        if self.alfosc: # Make code to create and read newly created 1D ALFOSC spectrum
-            self.extract_1d_spectrum()
-            self.file_flag, self.fits_file = 3, self.alfosc_output
-            print("file_flag updated (3).")
 
         # File handling based on flag
         if self.file_flag == 1:
@@ -437,13 +312,13 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 header = hdul[0].header
                 crpix1, crval1, cdelt1 = header.get('CRPIX1'), header.get('CRVAL1'), header.get('CDELT1')
                 self.wav = crval1 + (np.arange(len(self.spec)) - (crpix1 - 1)) * cdelt1
-                self.err = self.spec * 0.1 # ASSUME AN ARBITRARY ERROR SPECTRUM FOR NOW
+                self.err = None  # No error spectrum
         elif self.file_flag == 3:
-            print("Reading file flag 3")#DEBUG
-            print("self.fits_file:", self.fits_file)#DEBUG
+            print("Reading file flag 3") # [DEBUG]
+            print("self.fits_file:", self.fits_file) # [DEBUG]
             data = np.loadtxt(self.fits_file)
             print(data)
-            self.wav, self.spec, self.err = data[:, 0], data[:, 1], data[:, 1] * 0.1
+            self.wav, self.spec, self.err = data[:, 0], data[:, 1], data[:, 2] if data.shape[1] > 2 else None
         elif self.file_flag == 4:
             data = np.loadtxt(self.fits_file)
             self.wav, self.spec, self.err = data[:, 0], data[:, 2], data[:, 3]
@@ -452,13 +327,13 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 data = hdul[1].data
                 self.wav = data['wave']
                 self.spec = data['flux']
-                self.err = data['flux'] * 0.1
+                self.err = None
         elif self.file_flag == 6:
             with fits.open(self.fits_file) as hdul:
                 data = hdul[1].data
                 self.wav = data[0][0]
                 self.spec = data[0][1]
-                self.err = data[0][1] * 0.1
+                self.err = None
         elif self.file_flag == 7:
             with fits.open(self.fits_file) as hdul:
                 hdul.info()
@@ -497,7 +372,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
 
             self.wav = np.array(wavelengths)
             self.spec = np.array(fluxes)
-            self.err = self.spec * 0.1
+            self.err = None  # No error spectrum
         else:
             with fits.open(self.fits_file) as hdul:
                 self.wav, self.spec, self.err = hdul[0].data, hdul[1].data, hdul[2].data
@@ -537,12 +412,20 @@ class SpectrumPlotter(QtWidgets.QWidget):
         self.fig, self.ax = plt.subplots(figsize=(10, 6))
         # Adjust plot
         self.fig.subplots_adjust(bottom=0.35)
-        self.step_spec, = self.ax.step(self.x_data, self.spec, label='Spectrum', color='black', where='mid')
+        self.step_spec, = self.ax.step(self.x_data, self.spec, label='Data', color='black', where='mid')
         self.line_spec, = self.ax.plot(self.x_data, self.spec, color='black', visible=False)
-        self.step_error, = self.ax.step(self.x_data, self.err, color='red', linestyle='--', alpha=0.4, label='Error', where='mid')
-        self.line_error, = self.ax.plot(self.x_data, self.err, color='red', linestyle='--', alpha=0.4, visible=False)
+        
+        # Only plot error if errors exist
+        if self.err is not None:
+            self.step_error, = self.ax.step(self.x_data, self.err, color='red', linestyle='--', alpha=0.4, label='Error', where='mid')
+            self.line_error, = self.ax.plot(self.x_data, self.err, color='red', linestyle='--', alpha=0.4, visible=False)
+            self.error_line = self.step_error if self.is_step_plot else self.line_error
+        else:
+            self.step_error = None
+            self.line_error = None
+            self.error_line = None
+        
         self.spectrum_line = self.step_spec if self.is_step_plot else self.line_spec
-        self.error_line = self.step_error if self.is_step_plot else self.line_error
         self.ax.plot(self.x_data, [0] * len(self.x_data), color='gray', linestyle='--', linewidth=1) # Add horizontal line at y=0
         self.ax.set_xlabel('Wavelength (Å)')
         self.ax.set_ylabel(r'Flux (arbitrary units)') # Use arbitrary units instead
@@ -573,6 +456,10 @@ class SpectrumPlotter(QtWidgets.QWidget):
 
         # Show the Item Tracker window (in background)
         self.item_tracker.item_deleted.connect(self.on_item_deleted_from_tracker)
+        self.item_tracker.item_selected.connect(self.on_item_selected_from_tracker)
+        self.item_tracker.item_individually_deselected.connect(self.on_item_individually_deselected_from_tracker)
+        self.item_tracker.item_deselected.connect(self.on_item_deselected_from_tracker)
+        self.item_tracker.estimate_redshift.connect(self.on_estimate_redshift_from_tracker)
         self.item_tracker.setGeometry(1100, 700, 650, 350)  # Position on the right side
         self.item_tracker.show()
 
@@ -596,6 +483,10 @@ class SpectrumPlotter(QtWidgets.QWidget):
         line_wavelengths = np.array(line_wavelengths)
         return line_wavelengths, line_ids
     
+    def get_all_available_line_lists(self):
+        """Get all available line lists from the resources directory."""
+        return get_available_line_lists(self.resources_dir)
+    
     def read_osc(self):
         # Read spectral lines from file
         script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -617,7 +508,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
     def read_instrument_bands(self):
         # Read instrument bands from file
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        bands_file = os.path.join(script_dir, 'instrument_bands.txt')
+        bands_file = os.path.join(script_dir, '..', 'resources', 'bands', 'instrument_bands.txt')
         with open(bands_file, 'r') as file:
             for line in file:
                 parts = line.strip().split(',')
@@ -658,7 +549,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
             new_lsf_kernel_x = np.linspace(np.min(self.lsf_kernel_x), np.max(self.lsf_kernel_x), len(profile)) # Create x-array with same size as the fitted profile
             lsf_interp_y = lsf_interp(new_lsf_kernel_x) # Interpolated LSF values
             lsf_interp_y /= np.sum(lsf_interp_y) # Normalize
-            # print("new_lsf_kernel_x:",new_lsf_kernel_x) # DEBUG
+            # print("new_lsf_kernel_x:",new_lsf_kernel_x) # [DEBUG]
             # print("lsf_interp_y:",lsf_interp_y)
             # print("Plotting convolution kernel")
             # self.ax.step(self.lsf_kernel_x, self.lsf_kernel_y, color='purple', linestyle=':')
@@ -753,13 +644,18 @@ class SpectrumPlotter(QtWidgets.QWidget):
     # Update the plot with new redshift
     def update_redshift(self, new_redshift):
         self.redshift = new_redshift # Update the global redshift variable
-        self.display_linelist()
+        
+        # Redisplay line lists with new redshift
+        if self.active_line_lists:
+            self.display_linelist()
+        
+        self.fig.canvas.draw_idle()
 
     # Smooth the spectrum with a Gaussian kernel
     def smooth_spectrum(self, kernel_width):
         from scipy.ndimage import gaussian_filter1d  # Import here to avoid global imports
 
-        # Debug: Ensure original spectrum data is present
+        # [DEBUG] Ensure original spectrum data is present
         if self.original_spec is None:
             print("Error: original_spec is not defined.")
             return
@@ -767,7 +663,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
         print("Applying Gaussian smoothing with kernel width:", kernel_width)
         self.smoothed_spec = gaussian_filter1d(self.original_spec, sigma=kernel_width)
         
-        # Debug: Verify smoothing result
+        # [DEBUG] Verify smoothing result
         print("Smoothed spectrum (first 5 values):", self.smoothed_spec[:5])
 
         if self.smoothed_spec is not None:  # Check if the spectrum_line is defined
@@ -834,7 +730,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
         # Calculate the equivalent width (EW) using summation
         # ew = np.sum((1 - profile_values / continuum_values) * delta_lambda)
 
-        # Print debug information
+        # [DEBUG] Print debug information
         print(f"Avg. continuum level: {np.mean(continuum_values):.2f}")
         print(f"Avg. delta_lambda: {np.mean(delta_lambda):.2f}")
         print(f"Equivalent Width (observed): {ew:.2f} Å")
@@ -1025,9 +921,9 @@ class SpectrumPlotter(QtWidgets.QWidget):
         
         # Request rest-frame wavelength input from the user
         try:
-            # self.rest_wavelength = float(input("Rest-frame wavelength: "))
-            # Create and show LineListWindow for selection
-            self.line_list_window = LineListWindow(self.line_wavelengths, self.line_ids)
+            # Get all available line lists for selection
+            available_line_lists = self.get_all_available_line_lists()
+            self.line_list_window = LineListWindow(available_line_lists=available_line_lists)
             self.line_list_window.selected_line.connect(self.set_rest_wavelength)
             self.line_list_window.show()
         except ValueError:
@@ -1115,7 +1011,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
             fit['line'].set_xdata(velocity_line_data)
 
         # Convert Voigt fits to velocity space
-        for fit in self.voigt_fits:  # Assuming you have a self.voigt_fits list
+        for fit in self.voigt_fits:
             # FOR NOW, DON'T WORRY ABOUT THE CONVERSION BETWEEN WAVELENGTH AND VELOCITY AND INSTEAD ACCESS BOUNDS
             # wavelength_mean, wavelength_bounds, wavelength_line = fit['center'], fit['bounds'], fit['line']
             # velocity_mean, velocity_bounds, velocity_line = self.convert_voigt_to_velocity(fit, wavelength_bounds)
@@ -1292,8 +1188,8 @@ class SpectrumPlotter(QtWidgets.QWidget):
         
         Parameters:
         -----------
-        x, y, err : arrays
-            Data points and errors
+        x, y, err : arrays or None
+            Data points and errors (err can be None)
         sigma_threshold : float
             Sigma clipping threshold
         max_iterations : int
@@ -1315,7 +1211,10 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 # Apply the current mask to filter x and y arrays
                 x_filtered = x[mask]
                 y_filtered = y[mask]
-                err_filtered = err[mask]
+                if err is not None:
+                    err_filtered = err[mask]
+                else:
+                    err_filtered = None
 
                 # Fit polynomial of specified order
                 coeffs = np.polyfit(x_filtered, y_filtered, poly_order)
@@ -1541,7 +1440,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
     def plot_redshift_gaussian(self, fit):
         left_bound, right_bound = fit['bounds']
         x = np.linspace(left_bound, right_bound, 100)
-        print(f"Amplitude: {fit['amp']}, Mean: {fit['mean']}, Sigma: {fit['stddev']}")  # Debug print
+        print(f"Amplitude: {fit['amp']}, Mean: {fit['mean']}, Sigma: {fit['stddev']}")  # [DEBUG]
 
         gaussian_curve = fit['amp'] * np.exp(-0.5 * ((x - fit['mean']) / fit['stddev']) ** 2)
         continuum_vals, a, b = self.get_existing_continuum(left_bound, right_bound)
@@ -1556,6 +1455,13 @@ class SpectrumPlotter(QtWidgets.QWidget):
         if hasattr(self, 'current_gaussian_plot') and self.current_gaussian_plot:
             self.current_gaussian_plot.remove() # Remove any previous plot of the selected gaussian
         self.current_gaussian_plot = self.ax.plot(x, plot_data, color='lime', linestyle='-', linewidth=2)[0]  # Store the first element (line object)
+        
+        # Highlight the original fit line in neon green for redshift mode
+        if 'line' in fit and fit['line']:
+            fit['line'].set_color('lime')
+            fit['line'].set_linewidth(2.5)
+            self.redshift_selected_line = fit['line']
+        
         plt.draw()  # Refresh the plot
 
     def plot_redshift_voigt(self, fit):
@@ -1582,41 +1488,81 @@ class SpectrumPlotter(QtWidgets.QWidget):
         if hasattr(self, 'current_voigt_plot') and self.current_voigt_plot:
             self.current_voigt_plot.remove()
         self.current_voigt_plot = self.ax.plot(x, plot_data, color='lime', linestyle='-', linewidth=2)[0]
+        
+        # Highlight the original fit line in neon green for redshift mode
+        if 'line' in fit and fit['line']:
+            fit['line'].set_color('lime')
+            fit['line'].set_linewidth(2.5)
+            self.redshift_selected_line = fit['line']
+        
         plt.draw()  # Refresh the plot to show the updated Voigt profile
 
     def display_linelist(self):
-        # Apply initial redshift and plot vertical lines with labels
-        shifted_wavelengths = self.line_wavelengths * (1 + self.redshift)
-        # Clear previous lines if they exist
-        self.clear_linelist()  # Ensure we clear any existing lines before displaying new ones
+        """Display all active line lists on the spectrum"""
+        # Clear previous lines
+        self.clear_linelist()
+        
         # Get current x-limits of the plot
         xlim = self.ax.get_xlim()
         
-        for idx, wl in enumerate(shifted_wavelengths):
-            # Check if the wavelength is within the current x-limits
-            if xlim[0] <= wl <= xlim[1]:
-                # Draw the vertical line only if it is within the current x-limits
-                line = self.ax.axvline(wl, color='#00b2f3', linestyle='--', alpha=0.7)
-                label = self.ax.text(wl, 0, f'{self.line_ids[idx]}',
-                                rotation=90, verticalalignment='bottom', color='#00b2f3', fontsize=8)
-                self.linelist_plots.append((line, label))  # Store the line and label for removal later
-            else:
-                # If the label is outside x-limits, don't add it to line_plots
-                label = None
+        # Display each active line list
+        for linelist_info in self.active_line_lists:
+            linelist = linelist_info['linelist']
+            color = linelist_info['color']
+            
+            for line in linelist.lines:
+                # Apply redshift to the line wavelength
+                shifted_wl = line.wave * (1 + self.redshift)
+                
+                # Check if wavelength is within current x-limits
+                if xlim[0] <= shifted_wl <= xlim[1]:
+                    # Draw the vertical line
+                    vline = self.ax.axvline(shifted_wl, color=color, linestyle='--', alpha=0.7)
+                    label = self.ax.text(shifted_wl, 0, line.name,
+                                        rotation=90, verticalalignment='bottom', 
+                                        color=color, fontsize=8)
+                    self.current_linelist_lines.append((vline, label))
+        
+        plt.draw()
 
     def clear_linelist(self):
-        # Remove the vertical lines and labels
-        for line, label in self.linelist_plots:
+        """Remove all displayed line lists from the plot"""
+        for line, label in self.current_linelist_lines:
             line.remove()
             label.remove()
-        self.linelist_plots = []  # Clear the list of line plots
+        self.current_linelist_lines = []  # Clear the list of plotted lines
 
     def open_linelist_window(self):
-        line_wavelengths, line_ids = self.read_lines()  # Load line data
-        self.ll_window = LineListWindow(line_wavelengths, line_ids)
-        self.ll_window.selected_line.connect(self.estimate_redshift)  # Connect selection handler
-        self.ll_window.closed.connect(self.on_close_linelist)  # Connect the close event to remove Gaussian
+        """Open the line list window for redshift estimation."""
+        available_line_lists = self.get_all_available_line_lists()
+        self.ll_window = LineListWindow(available_line_lists=available_line_lists)
+        self.ll_window.selected_line.connect(self.estimate_redshift)
+        self.ll_window.closed.connect(self.on_close_linelist)
+        self.ll_window.setWindowFlags(self.ll_window.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
         self.ll_window.show()
+        self.ll_window.raise_()
+        self.ll_window.activateWindow()
+    
+    def show_line_list_selector(self):
+        """Show the line list selector window"""
+        if self.line_list_selector is None:
+            self.line_list_selector = LineListSelector(self.resources_dir)
+            self.line_list_selector.line_lists_changed.connect(self.on_line_lists_changed)
+        
+        self.line_list_selector.show()
+        self.line_list_selector.raise_()
+        self.line_list_selector.activateWindow()
+    
+    def on_line_lists_changed(self, line_lists_with_colors):
+        """Handle change in selected line lists"""
+        self.active_line_lists = line_lists_with_colors
+        
+        # Redisplay line lists
+        if self.active_line_lists:
+            self.display_linelist()
+        else:
+            self.clear_linelist()
+            plt.draw()
 
     def on_close_linelist(self):
         """Remove the Gaussian plot when LineListWindow is closed."""
@@ -1624,16 +1570,32 @@ class SpectrumPlotter(QtWidgets.QWidget):
             self.current_gaussian_plot.remove()
             self.current_gaussian_plot = None
             plt.draw()  # Refresh the plot to reflect the removal
+            self.restore_redshift_highlight()
             self.redshift_estimation_mode = False
             print('Exiting redshift estimation mode.')
         elif self.current_voigt_plot is not None:
             self.current_voigt_plot.remove()
             self.current_voigt_plot = None
             plt.draw()  # Refresh the plot to reflect the removal
+            self.restore_redshift_highlight()
             self.redshift_estimation_mode = False
             print('Exiting redshift estimation mode.')
+    
+    def restore_redshift_highlight(self):
+        """Restore the original color of the line selected for redshift mode"""
+        if self.redshift_selected_line:
+            # Restore to original color (red for Gaussian, orange for Voigt typically)
+            # Check the color from the item_id_map to get the true original
+            for item_info in self.item_id_map.values():
+                if item_info.get('line_obj') == self.redshift_selected_line:
+                    original_color = item_info.get('color', 'red')
+                    self.redshift_selected_line.set_color(original_color)
+                    self.redshift_selected_line.set_linewidth(1)
+                    break
+            self.redshift_selected_line = None
+            plt.draw()
         
-    def register_item(self, item_type, name, fit_dict=None, line_obj=None, position='', color='gray'):
+    def register_item(self, item_type, name, fit_dict=None, line_obj=None, patch_obj=None, position='', color='gray', bounds=None):
         """Register an item with the tracker"""
         item_id = f"{item_type}_{self.item_id_counter}"
         self.item_id_counter += 1
@@ -1641,9 +1603,11 @@ class SpectrumPlotter(QtWidgets.QWidget):
             'type': item_type,
             'fit_dict': fit_dict,
             'line_obj': line_obj,
+            'patch_obj': patch_obj,
             'name': name,
             'position': position,
-            'color': color
+            'color': color,
+            'bounds': bounds
         }
         self.item_tracker.add_item(item_id, item_type, name, position=position, color=color, line_obj=line_obj)
         return item_id
@@ -1653,6 +1617,12 @@ class SpectrumPlotter(QtWidgets.QWidget):
         if item_id in self.item_id_map:
             del self.item_id_map[item_id]
             self.item_tracker.remove_item(item_id)
+        
+        # Clean up highlighting tracking if this item was highlighted
+        if item_id in self.highlighted_item_ids:
+            self.highlighted_item_ids.discard(item_id)
+        if item_id in self.original_colors:
+            del self.original_colors[item_id]
     
     def show_item_tracker(self):
         """Show the item tracker window"""
@@ -1665,11 +1635,144 @@ class SpectrumPlotter(QtWidgets.QWidget):
             return
         
         item_info = self.item_id_map[item_id]
+        item_type = item_info.get('type')
+        
+        # Handle line objects (gaussian, voigt, continuum)
         line_obj = item_info.get('line_obj')
         if line_obj:
             line_obj.remove()
+        
+        # Handle patches (continuum regions)
+        patch_obj = item_info.get('patch_obj')
+        if patch_obj:
+            patch_obj.remove()
+        
+        # If it's a continuum region, also remove from continuum_patches list
+        if item_type == 'continuum_region' and 'bounds' in item_info:
+            bounds = item_info['bounds']
+            self.continuum_patches = [p for p in self.continuum_patches if p.get('bounds') != bounds]
+        
         plt.draw()
         self.unregister_item(item_id)
+    
+    def on_item_selected_from_tracker(self, item_id):
+        """Handle item selection from tracker - highlight with royal blue color"""
+        if item_id not in self.item_id_map:
+            return
+        
+        # Add to highlighted items set (support multiple selections)
+        self.highlighted_item_ids.add(item_id)
+        
+        # Highlight the selected item
+        item_info = self.item_id_map[item_id]
+        
+        # Handle line objects (Gaussians, Voigts)
+        line_obj = item_info.get('line_obj')
+        if line_obj:
+            # Store original color and change to royal blue
+            original_color = line_obj.get_color()
+            self.original_colors[item_id] = original_color
+            line_obj.set_color('royalblue')
+            line_obj.set_linewidth(2.5)
+        
+        # Handle patch objects (continuum regions)
+        patch_obj = item_info.get('patch_obj')
+        if patch_obj:
+            # Store original color and change to royal blue
+            original_color = patch_obj.get_edgecolor()
+            self.original_colors[item_id] = original_color
+            patch_obj.set_edgecolor('royalblue')
+            patch_obj.set_linewidth(2.5)
+        
+        plt.draw()
+    
+    def on_item_deselected_from_tracker(self):
+        """Handle item deselection from tracker - restore original color for all items"""
+        # Restore all highlighted items to their original colors
+        for item_id in self.highlighted_item_ids:
+            if item_id in self.item_id_map:
+                item_info = self.item_id_map[item_id]
+                
+                # Restore line objects (Gaussians, Voigts)
+                line_obj = item_info.get('line_obj')
+                if line_obj and item_id in self.original_colors:
+                    original_color = self.original_colors[item_id]
+                    line_obj.set_color(original_color)
+                    line_obj.set_linewidth(1)  # Restore normal width
+                
+                # Restore patch objects (continuum regions)
+                patch_obj = item_info.get('patch_obj')
+                if patch_obj and item_id in self.original_colors:
+                    original_color = self.original_colors[item_id]
+                    patch_obj.set_edgecolor(original_color)
+                    patch_obj.set_linewidth(1)  # Restore normal width
+        
+        # Clear tracking variables
+        self.highlighted_item_ids.clear()
+        self.original_colors.clear()
+        plt.draw()
+    
+    def on_item_individually_deselected_from_tracker(self, item_id):
+        """Handle individual item deselection when multiple items are selected"""
+        if item_id not in self.item_id_map:
+            return
+        
+        # Remove from highlighted set
+        self.highlighted_item_ids.discard(item_id)
+        
+        # Restore just this item to its original color
+        if item_id in self.item_id_map:
+            item_info = self.item_id_map[item_id]
+            
+            # Restore line objects (Gaussians, Voigts)
+            line_obj = item_info.get('line_obj')
+            if line_obj and item_id in self.original_colors:
+                original_color = self.original_colors[item_id]
+                line_obj.set_color(original_color)
+                line_obj.set_linewidth(1)  # Restore normal width
+            
+            # Restore patch objects (continuum regions)
+            patch_obj = item_info.get('patch_obj')
+            if patch_obj and item_id in self.original_colors:
+                original_color = self.original_colors[item_id]
+                patch_obj.set_edgecolor(original_color)
+                patch_obj.set_linewidth(1)  # Restore normal width
+            
+            # Clean up tracking for this item
+            if item_id in self.original_colors:
+                del self.original_colors[item_id]
+        
+        plt.draw()
+        
+    def on_estimate_redshift_from_tracker(self, item_id):
+        """Handle estimate redshift action from ItemTracker context menu"""
+        if item_id not in self.item_id_map:
+            return
+        
+        item_info = self.item_id_map[item_id]
+        item_type = item_info.get('type')
+        
+        # Activate redshift mode for Gaussians and Voigts
+        if item_type == 'gaussian':
+            fit = item_info.get('fit_dict')
+            if fit:
+                self.selected_gaussian = fit
+                self.selected_voigt = None
+                self.redshift_estimation_mode = True
+                self.plot_redshift_gaussian(fit)
+                print("Redshift estimation mode activated for Gaussian")
+                # Open line list window for line selection
+                self.open_linelist_window()
+        elif item_type == 'voigt':
+            fit = item_info.get('fit_dict')
+            if fit:
+                self.selected_voigt = fit
+                self.selected_gaussian = None
+                self.redshift_estimation_mode = True
+                self.plot_redshift_voigt(fit)
+                print("Redshift estimation mode activated for Voigt")
+                # Open line list window for line selection
+                self.open_linelist_window()
         
     def estimate_redshift(self, selected_id, selected_wavelength):
         self.selected_id, self.selected_rest_wavelength = selected_id, selected_wavelength  # Store the selected wavelength
@@ -2033,7 +2136,11 @@ class SpectrumPlotter(QtWidgets.QWidget):
 
             x = self.wav[final_mask]
             y = self.spec[final_mask]
-            yerr = self.err[final_mask] if hasattr(self, "err") else np.ones_like(y) * np.std(y)
+            # Handle optional error spectrum in Bayesian fitting
+            if self.err is not None:
+                yerr = self.err[final_mask]
+            else:
+                yerr = np.ones_like(y) * np.std(y)
 
             _, _, _, poly_order, poly_guess = self._bayes_fit_args
             self.prompt_gaussian_selection(x, y, yerr, poly_order, poly_guess)
@@ -2046,7 +2153,11 @@ class SpectrumPlotter(QtWidgets.QWidget):
         mask = (self.wav > left) & (self.wav < right)
         x = self.wav[mask]
         y = self.spec[mask]
-        yerr = self.err[mask]# if hasattr(self, "err") else np.ones_like(y) * np.std(y) 
+        # Handle optional error spectrum in Bayesian fitting
+        if self.err is not None:
+            yerr = self.err[mask]
+        else:
+            yerr = np.ones_like(y) * np.std(y) 
 
         # Ask user for polynomial order using Qt dialog
         poly_order_str, ok = QtWidgets.QInputDialog.getText(
@@ -2413,7 +2524,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
             samples,
             truths=truths if 'truths' in locals() else None,
             show_titles=True,
-            title_fmt=".2f", # NOTE: Only the 1-sigma confidence values are shown in the title of each panel - just so you know!
+            title_fmt=".2f",
             title_kwargs={"fontsize": 12},
             quantiles=[0.05, 0.16, 0.5, 0.84, 0.95],  # 1-sigma, 2-sigma contours
             plot_density=True,  # Show the density contours
@@ -2643,7 +2754,8 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 if np.any(mask):
                     combined_wav.extend(self.x_data[mask])
                     combined_spec.extend(self.spec[mask])
-                    combined_err.extend(self.err[mask])
+                    if self.err is not None:
+                        combined_err.extend(self.err[mask])
 
             # Make combined region to define the outer x-bounds of the continuum fit
             region_bounds = (min(region[0] for region in self.continuum_regions), max(region[1] for region in self.continuum_regions))
@@ -2651,7 +2763,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
             # Convert to numpy arrays
             combined_wav = np.array(combined_wav)
             combined_spec = np.array(combined_spec)
-            combined_err = np.array(combined_err)
+            combined_err = np.array(combined_err) if combined_err else None
 
             # Fit the continuum using the combined data
             continuum, coeffs, perr = self.fit_continuum(combined_wav, combined_spec, combined_err, poly_order=self.poly_order)
@@ -2662,8 +2774,11 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 poly_str += f" c{i}={coeff:.6e}±{err:.6e}"
             print(poly_str)
 
-            # Plot the fitted continuum and store the line object
-            continuum_line, = self.ax.plot(combined_wav, continuum, color='magenta', linestyle='--', alpha=0.8)
+            # Plot the fitted continuum only between the minimum and maximum continuum region wavelengths
+            # Create wavelength array between region bounds for plotting
+            x_plot = np.linspace(region_bounds[0], region_bounds[1], 500)
+            continuum_full = np.polyval(coeffs, x_plot)
+            continuum_line, = self.ax.plot(x_plot, continuum_full, color='magenta', linestyle='--', alpha=0.8)
             if self.is_residual_shown:
                 self.calculate_and_plot_residuals()
             plt.legend()
@@ -2702,7 +2817,12 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 print(f"Region end defined at: {event.xdata:.2f}. Press space to define another region or enter to finalize.")
                 # Plot the region as a shaded patch
                 patch = self.ax.axvspan(self.continuum_regions[-1][0], event.xdata, color='magenta', alpha=0.3, hatch='//')
-                self.continuum_patches.append({'patch': patch, 'bounds': (self.continuum_regions[-1][0], event.xdata)}) # Store the patch
+                region_bounds = (self.continuum_regions[-1][0], event.xdata)
+                self.continuum_patches.append({'patch': patch, 'bounds': region_bounds}) # Store the patch
+                # Register the region patch with ItemTracker
+                position_str = f"λ: {region_bounds[0]:.2f}-{region_bounds[1]:.2f} Å"
+                self.register_item('continuum_region', f'Continuum Region', patch_obj=patch, 
+                                 position=position_str, color='magenta', bounds=region_bounds)
                 # self.continuum_patches.append(patch) # Store the patch
                 plt.draw()  # Update plot with the new region
         # Remove continuum region
@@ -2712,10 +2832,9 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 region_bounds = fit['bounds']
                 left_bound, right_bound = region_bounds
                 if left_bound <= event.xdata <= right_bound:
-                    # Remove the fitted continuum line
-                    continuum_line = fit.get('line')  # If you store the line in the fit dictionary
+                    continuum_line = fit.get('line')
                     if continuum_line:
-                        continuum_line.remove()  # Remove the fitted continuum line
+                        continuum_line.remove()
                         print(f"Removed continuum line {continuum_line} in range: {region_bounds}")
                     # Remove the fit from the list
                     self.continuum_fits.remove(fit)
@@ -2793,7 +2912,11 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 existing_continuum, _, _ = self.get_existing_continuum(left_bound, right_bound)
                 comp_x = self.x_data[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
                 comp_y = self.spec[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
-                comp_err = self.err[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
+                # Handle optional error spectrum
+                if self.err is not None:
+                    comp_err = self.err[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
+                else:
+                    comp_err = None
 
                 if existing_continuum is not None:
                     # Use the existing continuum
@@ -2848,7 +2971,11 @@ class SpectrumPlotter(QtWidgets.QWidget):
 
                     # --- END NEW GUESS METHOD --- #
                     
-                    params, pcov = curve_fit(self.gaussian, comp_x, continuum_subtracted_y, sigma=comp_err, p0=initial_guess, bounds=([-np.inf, -np.inf, 0], [np.inf, np.inf, np.inf]))
+                    # curve_fit with optional sigma (errors)
+                    if comp_err is not None:
+                        params, pcov = curve_fit(self.gaussian, comp_x, continuum_subtracted_y, sigma=comp_err, p0=initial_guess, bounds=([-np.inf, -np.inf, 0], [np.inf, np.inf, np.inf]))
+                    else:
+                        params, pcov = curve_fit(self.gaussian, comp_x, continuum_subtracted_y, p0=initial_guess, bounds=([-np.inf, -np.inf, 0], [np.inf, np.inf, np.inf]))
                     amp, mean, stddev = params
                     perr = np.sqrt(np.diag(pcov))
                     amp_err, mean_err, stddev_err = perr
@@ -2857,7 +2984,11 @@ class SpectrumPlotter(QtWidgets.QWidget):
                     x_fit = comp_x
                     y_fit = self.gaussian(x_fit, amp, mean, stddev) + (existing_continuum if existing_continuum is not None else overall_continuum)
                     residuals = comp_y - y_fit
-                    chi2 = np.sum((residuals ** 2) / comp_err) # Calculate chi2
+                    # Calculate chi2 with optional errors
+                    if comp_err is not None:
+                        chi2 = np.sum((residuals ** 2) / comp_err) # Calculate chi2
+                    else:
+                        chi2 = np.sum(residuals ** 2) # Chi2 without errors
                     chi2_nu = chi2 / (len(x_fit) - len(params))# Calculate chi2 d.o.f.
                     interpolator = interp1d(x_fit, y_fit, kind='cubic')
                     x_plt = np.linspace(x_fit.min(), x_fit.max(), 10 * len(x_fit))
@@ -2879,6 +3010,10 @@ class SpectrumPlotter(QtWidgets.QWidget):
                     'rest_id': self.rest_id,
                     'z_sys': self.redshift
                     })
+                    # Register with ItemTracker
+                    position_str = f"λ: {mean:.2f} Å"
+                    self.register_item('gaussian', f'Gaussian', fit_dict=self.gaussian_fits[-1], line_obj=fit_line,
+                                     position=position_str, color='red')
                     print(f"  Fit ID: {self.fit_id}")
                     print(f"  Component ID: {self.component_id}")
                     print(f"  Velocity mode: {self.is_velocity_mode}")
@@ -2920,9 +3055,13 @@ class SpectrumPlotter(QtWidgets.QWidget):
             for left_bound, right_bound in bound_pairs:
                 comp_x = self.x_data[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
                 comp_y = self.spec[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
-                comp_err = self.err[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
+                # Handle optional error spectrum
+                if self.err is not None:
+                    comp_err = self.err[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
+                else:
+                    comp_err = None
                 comp_ys.append(comp_y)
-                # self.ax.step(comp_x, comp_y, color='brown', linestyle='--') # DEBUG
+                # self.ax.step(comp_x, comp_y, color='brown', linestyle='--') # [DEBUG]
                 
                 # Check for existing continuum within bounds
                 existing_continuum, _, _ = self.get_existing_continuum(left_bound, right_bound)
@@ -2947,7 +3086,9 @@ class SpectrumPlotter(QtWidgets.QWidget):
 
                 continuum_ys.append(continuum_y)
                 comp_xs.extend(comp_x)
-                comp_errs.extend(comp_err)
+                # Add error to list only if available
+                if comp_err is not None:
+                    comp_errs.extend(comp_err)
                 continuum_subtracted_ys.extend(continuum_subtracted_y)
                 # Add initial guesses for Gaussian fitting
                 initial_guesses.extend([max(continuum_subtracted_y) - min(continuum_subtracted_y), np.mean(comp_x), np.std(comp_x)]) # NOT SHARED SIGMA
@@ -2956,7 +3097,9 @@ class SpectrumPlotter(QtWidgets.QWidget):
             if len(comp_xs) > 0:
                 comp_xs = np.array(comp_xs)
                 continuum_subtracted_ys = np.array(continuum_subtracted_ys)
-                params, pcov = curve_fit(self.multi_gaussian, comp_xs, continuum_subtracted_ys, sigma=comp_errs, p0=initial_guesses) # NOT SHARED SIGMA
+                # Use sigma if errors available, otherwise None
+                sigma_param = np.array(comp_errs) if comp_errs else None
+                params, pcov = curve_fit(self.multi_gaussian, comp_xs, continuum_subtracted_ys, sigma=sigma_param, p0=initial_guesses) # NOT SHARED SIGMA
                 perr = np.sqrt(np.diag(pcov))
                 for i in range(0, len(params), 3):
                     amp, mean, stddev = params[i:i+3]
@@ -2964,7 +3107,11 @@ class SpectrumPlotter(QtWidgets.QWidget):
                     x_fit = self.x_data[(self.x_data >= bound_pairs[i // 3][0]) & (self.x_data <= bound_pairs[i // 3][1])]
                     y_fit = self.gaussian(x_fit, amp, mean, stddev) + continuum_ys[i // 3]
                     residuals = continuum_subtracted_ys[i // 3] - y_fit
-                    chi2 = np.sum((residuals ** 2) / comp_errs[i // 3]) # Calculate chi2
+                    # Calculate chi2 with optional errors
+                    if comp_errs:
+                        chi2 = np.sum((residuals ** 2) / comp_errs[i // 3]) # Calculate chi2
+                    else:
+                        chi2 = np.sum(residuals ** 2) # Chi2 without errors
                     chi2_nu = chi2 / (len(x_fit) - len(params))# Calculate chi2 d.o.f.
                     interpolator = interp1d(x_fit, y_fit, kind='cubic')
                     x_plt = np.linspace(x_fit.min(), x_fit.max(), 10 * len(x_fit))
@@ -3048,7 +3195,11 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 existing_continuum, _, _ = self.get_existing_continuum(left_bound, right_bound)
                 comp_x = self.x_data[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
                 comp_y = self.spec[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
-                comp_err = self.err[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
+                # Handle optional error spectrum
+                if self.err is not None:
+                    comp_err = self.err[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
+                else:
+                    comp_err = None
 
                 # Subtract existing continuum if found
                 if existing_continuum is not None:
@@ -3076,7 +3227,9 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 test_output = voigt_model.eval(params=initial_params, x=comp_x)
                 if np.isnan(test_output).any():
                     print("Warning: Model function generated NaN values with initial parameters.")
-                result = voigt_model.fit(continuum_subtracted_y, x=comp_x, params=initial_params, weights=1/comp_err)
+                # Use weights if errors available, otherwise None
+                weights = 1/comp_err if comp_err is not None else None
+                result = voigt_model.fit(continuum_subtracted_y, x=comp_x, params=initial_params, weights=weights)
 
                 # Clear bounds
                 for line in self.bound_lines:
@@ -3088,7 +3241,11 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 x_fit = np.linspace(left_bound, right_bound, len(existing_continuum))
                 y_fit = result.eval(x=x_fit) + existing_continuum
                 residuals = comp_y - y_fit
-                chi2 = np.sum((residuals ** 2) / comp_y) # Calculate combined chi2
+                # Calculate chi2 with optional errors
+                if comp_err is not None:
+                    chi2 = np.sum((residuals ** 2) / comp_err) # Calculate combined chi2
+                else:
+                    chi2 = np.sum(residuals ** 2) # Chi2 without errors
                 chi2_nu = chi2 / (len(x_fit) - len(result.params)) # Calculate chi2 d.o.f.
                 interpolator = interp1d(x_fit, y_fit, kind='cubic')
                 x_plt = np.linspace(x_fit.min(), x_fit.max(), 10 * len(x_fit))
@@ -3182,7 +3339,8 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 left_bound, right_bound = sorted(self.bounds[-2:])
 
                 # Open the LineListWindow to select a line                
-                self.line_list_window = LineListWindow(self.line_wavelengths, self.line_ids)
+                available_line_lists = self.get_all_available_line_lists()
+                self.line_list_window = LineListWindow(available_line_lists=available_line_lists)
                 self.line_list_window.selected_line.connect(self.receive_voigt)  # Connect selection to assign function
                 self.line_list_window.show()
                 # Save bounds for later use in on_line_selected
@@ -3284,7 +3442,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
             existing_continuum, _, _ = self.get_existing_continuum(leftmost_bound, rightmost_bound)
             continuum_subtracted_y = y_fit - existing_continuum
             result = combined_model.fit(continuum_subtracted_y, initial_params, x=x_fit, weights=1/err_fit)
-            print(result.fit_report()) # DEBUG
+            print(result.fit_report()) # [DEBUG]
 
             for idx, (left_bound, right_bound) in enumerate(bound_pairs):
                 prefix = f'p{idx+1}_'
@@ -3344,6 +3502,10 @@ class SpectrumPlotter(QtWidgets.QWidget):
                                 fit_results['b'] = b
                                 fit_results['logT_eff'] = np.log10(T_eff)
                 self.voigt_fits.append(fit_results)
+                # Register with ItemTracker
+                position_str = f"λ: {fit_results.get('center', fit_results.get('mean', 0)):.2f} Å"
+                self.register_item('voigt', f'Voigt', fit_dict=fit_results, line_obj=fit_results.get('line'),
+                                 position=position_str, color='orange')
                 print("fit_results:",fit_results)
                 print(f"  Fit ID: {self.fit_id}")
                 print(f"  Component ID: {self.component_id}")
@@ -3415,7 +3577,8 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 left_bound, right_bound = sorted(self.bounds[-2:])
 
                 # Open the LineListWindow to select a line                
-                self.line_list_window = LineListWindow(self.line_wavelengths, self.line_ids)
+                available_line_lists = self.get_all_available_line_lists()
+                self.line_list_window = LineListWindow(available_line_lists=available_line_lists)
                 self.line_list_window.selected_line.connect(self.receive_gaussian)  # Connect selection to assign function
                 self.line_list_window.show()
                 # Save bounds for later use in on_line_selected
@@ -3507,7 +3670,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
             existing_continuum, _, _ = self.get_existing_continuum(leftmost_bound, rightmost_bound)
             continuum_subtracted_y = y_fit - existing_continuum
             result = combined_model.fit(continuum_subtracted_y, initial_params, x=x_fit, weights=1/err_fit)
-            print(result.fit_report()) # DEBUG
+            print(result.fit_report()) # [DEBUG]
 
             for idx, (left_bound, right_bound) in enumerate(bound_pairs):
                 prefix = f'p{idx+1}_'
@@ -3811,11 +3974,8 @@ class SpectrumPlotter(QtWidgets.QWidget):
             if self.markers and self.labels:
                 self.update_marker_and_label_positions()
         elif event.key == 'e':
-            if self.linelist_plots:
-                self.clear_linelist()  # Remove the displayed lines
-            else:
-                self.display_linelist()  # Show the line list
-            self.fig.canvas.draw_idle()  # Redraw the figure to update the display
+            # Toggle line list selector window
+            self.show_line_list_selector()
         elif event.key in ['!', '@', '#', '$', '%', '^', '&', '*', '(', ')']:  # Corresponding to bands 0-5
             index = ['!', '@', '#', '$', '%', '^', '&', '*', '(', ')'].index(event.key)
             if index < len(self.band_ranges):
@@ -4202,9 +4362,13 @@ class SpectrumPlotter(QtWidgets.QWidget):
             
             if self.selected_gaussian or self.selected_voigt:
                 # Open the LineListWindow to select a line                
-                self.line_list_window = LineListWindow(self.line_wavelengths, self.line_ids)
+                available_line_lists = self.get_all_available_line_lists()
+                self.line_list_window = LineListWindow(available_line_lists=available_line_lists)
                 self.line_list_window.selected_line.connect(self.assign_line_to_fit)  # Connect selection to assign function
+                self.line_list_window.setWindowFlags(self.line_list_window.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
                 self.line_list_window.show()
+                self.line_list_window.raise_()
+                self.line_list_window.activateWindow()
             
         elif event.key == '<':
             # Find the marker and label nearest to the cursor to remove
@@ -4236,7 +4400,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
         mask = (self.x_data >= left_bound) & (self.x_data <= right_bound)
         x_fit = self.x_data[mask]
         y_fit = self.spec[mask]
-        err_fit = self.err[mask]
+        err_fit = self.err[mask] if self.err is not None else None
         
         if len(x_fit) == 0:
             print("Error: No data within bounds")
@@ -4249,8 +4413,11 @@ class SpectrumPlotter(QtWidgets.QWidget):
             print("Error: Could not build composite model")
             return
         
-        # Perform the fit
-        result = composite_model.fit(y_fit, x=x_fit, weights=1.0/err_fit)
+        # Perform the fit with optional weights
+        if err_fit is not None:
+            result = composite_model.fit(y_fit, x=x_fit, weights=1.0/err_fit)
+        else:
+            result = composite_model.fit(y_fit, x=x_fit)
         
         if not result.success:
             print(f"Fit failed: {result.message}")
@@ -4453,12 +4620,18 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 line, = self.ax.plot(x_smooth, y_component, color=color, linestyle='--', linewidth=2)
                 # Register with ItemTracker
                 position_str = f"λ: {left_bound:.2f}-{right_bound:.2f} Å"
-                item_id = self.register_item('polynomial', f'Polynomial (order={order})', position=position_str, color=color)
+                item_id = self.register_item('polynomial', f'Polynomial (order={order})', line_obj=line,
+                                           position=position_str, color=color)
                 poly_count += 1
         
         # Plot total fit
         y_total = result.best_fit
-        self.ax.plot(x_fit, y_total, color='darkblue', linestyle='-', linewidth=1.5, label='Total Fit', zorder=10)
+        total_line, = self.ax.plot(x_fit, y_total, color='darkblue', linestyle='-', linewidth=1.5, label='Total Fit', zorder=10)
+        
+        # Register total fit with ItemTracker
+        position_str = f"λ: {left_bound:.2f}-{right_bound:.2f} Å"
+        self.register_item('listfit_total', 'Listfit Total', line_obj=total_line, 
+                          position=position_str, color='darkblue')
         
         self.ax.legend()
 
