@@ -26,6 +26,25 @@ cd qasap
 pip install -r requirements.txt
 ```
 
+### Conda Environment Setup
+
+```bash
+# Create a new conda environment
+conda create -n qasap python=3.8
+
+# Activate the environment
+conda activate qasap
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Or install with conda
+conda install numpy scipy matplotlib astropy pandas lmfit pyqt emcee corner
+
+# Run QASAP
+python qasap.py spectrum.fits
+```
+
 ## Usage
 
 ### Auto-Detection (Recommended)
@@ -88,6 +107,98 @@ qasap.py                   # Main entry point (v0.6)
 ## Interactive Controls
 
 See `qasap_v0.5/README.md` for comprehensive keyboard shortcut documentation.
+
+## User Interface Windows
+
+### 1. Spectrum Plotter (Main Window)
+The central interactive spectrum visualization with the following controls:
+
+**Key Features:**
+- Real-time spectrum display with wavelength calibration
+- Zoom and pan capabilities
+- Automated continuum detection and normalization
+- Multi-component profile fitting visualization
+- Redshift tracking with selected line highlighting
+
+**Keyboard Shortcuts:**
+- `z`: Enter redshift mode (select emission line to estimate redshift)
+- `g`: Single Gaussian fitting mode
+- `v`: Single Voigt profile fitting mode
+- `h`: Listfit mode (multi-component simultaneous fitting)
+- `m`: Continuum modeling mode
+- `:`: Bayesian MCMC fitting mode
+- `l`: Toggle log scale
+- `f`: Apply smoothing to spectrum
+- `c`: Clear currently selected component
+- `w`: Remove Gaussian/Voigt from plot
+- `M`: Remove continuum model
+- `*`: Show/hide Item Tracker window
+- `q`: Quit application
+
+**Interactions:**
+- **Click on spectrum**: Select wavelength for analysis or component placement
+- **Spacebar**: Confirm actions in fitting modes or confirm bounds in listfit mode
+
+### 2. Control Panel (Sidebar)
+Displays real-time analysis information and fitting parameters:
+
+**Sections:**
+- **Quick Stats**: Line center, FWHM, equivalent width, signal-to-noise
+- **Redshift**: Current redshift and estimated error
+- **Component Info**: Details of currently selected Gaussian/Voigt (amplitude, mean, sigma/width)
+- **Fit Quality**: Reduced χ², Bayesian Information Criterion
+
+### 3. Linelist Window
+Database browser for emission and absorption lines:
+
+**Features:**
+- Searchable catalog of common emission lines (Hα, Hβ, [OIII], [OII], Lyα, etc.)
+- Rest wavelength reference
+- Line identification at current redshift
+- Click to jump to line in spectrum
+- Filter by line type or wavelength range
+
+**Usage:**
+- Select a line to overlay on spectrum
+- Double-click to center spectrum on line at current redshift
+
+### 4. Listfit Window (Multi-Component Fitting)
+Dialog for simultaneous fitting of multiple spectral components:
+
+**Workflow:**
+1. Press `h` on spectrum to activate listfit mode
+2. Define fitting bounds by clicking two wavelengths (spacebar confirms each)
+3. Listfit Window opens with component selection
+4. Choose component types and quantities:
+   - **Gaussian**: Simple Gaussian profiles
+   - **Voigt**: Gaussian + Lorentzian (more realistic for emission lines)
+   - **Polynomial**: Continuum background (specify order: 1-4)
+5. Click "Calculate Fit" to perform simultaneous fitting
+6. Fitted components displayed with individual colors:
+   - Red: Gaussian components
+   - Orange: Voigt components
+   - Magenta: Polynomial continuum
+   - Dark Blue: Combined total fit
+
+**Parameters:**
+- Each component shows fitted parameters (amplitude, center wavelength, width/sigma)
+- Errors computed from covariance matrix
+- Quality metrics: χ² and reduced χ²
+
+### 5. Item Tracker Window
+Centralized feature management panel accessed with `*` key:
+
+**Display Columns:**
+- **Name**: Feature identifier (e.g., "Gaussian 1", "Voigt 2")
+- **Type**: Component type (gaussian, voigt, polynomial, continuum)
+- **Position**: Wavelength bounds or center position
+- **Color**: Visual indicator with color box showing plot color
+
+**Operations:**
+- Multi-select items with Control/Shift+Click
+- Right-click context menu: "Delete" to remove from plot
+- "Delete Selected" button: Remove multiple items at once
+- "Clear All" button: Remove all features
 
 ## Versions
 
