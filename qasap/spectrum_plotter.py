@@ -2801,7 +2801,11 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 else:
                     # Fit a new continuum if none exists within bounds
                     overall_continuum, continuum_params, continuum_err = self.fit_continuum(self.x_data, self.spec, self.err)
-                    self.continuum_fits.append({'bounds': (min(self.x_data), max(self.x_data)), 'a': continuum_params[0], 'b': continuum_params[1], 'a_err': continuum_err[0], 'b_err': continuum_err[1]})
+                    continuum_fit = {'bounds': (min(self.x_data), max(self.x_data)), 'a': continuum_params[0], 'b': continuum_params[1], 'a_err': continuum_err[0], 'b_err': continuum_err[1]}
+                    self.continuum_fits.append(continuum_fit)
+                    # Register with ItemTracker
+                    bounds_str = f"λ: {min(self.x_data):.2f}-{max(self.x_data):.2f} Å"
+                    self.register_item('continuum', 'Continuum (auto)', fit_dict=continuum_fit, position=bounds_str, color='magenta')
                     overall_continuum = overall_continuum[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
                     continuum_subtracted_y = comp_y - overall_continuum
                     print("No existing continuum found; fitted new continuum.")
@@ -2928,7 +2932,11 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 else:
                     # Fit a new continuum if none exists within bounds
                     overall_continuum, continuum_params, continuum_err = self.fit_continuum(self.x_data, self.spec, self.err)
-                    self.continuum_fits.append({'bounds': (min(self.x_data), max(self.x_data)), 'a': continuum_params[0], 'b': continuum_params[1], 'a_err': continuum_err[0], 'b_err': continuum_err[1]})
+                    continuum_fit = {'bounds': (min(self.x_data), max(self.x_data)), 'a': continuum_params[0], 'b': continuum_params[1], 'a_err': continuum_err[0], 'b_err': continuum_err[1]}
+                    self.continuum_fits.append(continuum_fit)
+                    # Register with ItemTracker
+                    bounds_str = f"λ: {min(self.x_data):.2f}-{max(self.x_data):.2f} Å"
+                    self.register_item('continuum', 'Continuum (auto)', fit_dict=continuum_fit, position=bounds_str, color='magenta')
                     overall_continuum = overall_continuum[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
                     continuum_subtracted_y = comp_y - overall_continuum
                     continuum_ys.append(np.array(overall_continuum))
