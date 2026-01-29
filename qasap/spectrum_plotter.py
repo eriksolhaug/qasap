@@ -1,4 +1,4 @@
-# qasap Spectrum Plotter --- v0.5
+# qasap Spectrum Plotter --- v0.7
 """
 Main spectrum plotter widget for interactive spectral analysis
 """
@@ -29,6 +29,7 @@ import re
 
 # Import LineListWindow from sibling module
 from .linelist_window import LineListWindow
+from .listfit_window import ListfitWindow
 
 class SpectrumPlotter(QtWidgets.QWidget):
     def __init__(self, fits_file, redshift=0.0, zoom_factor=0.1, file_flag=0, alfosc=False, alfosc_bin=10, alfosc_left=0, alfosc_right=0, alfosc_output="", lsf="10",):
@@ -78,6 +79,13 @@ class SpectrumPlotter(QtWidgets.QWidget):
         self.continuum_patches = []
         self.continuum_fits = []
         self.continuum_params = []
+
+        self.listfit_mode = False
+        self.listfit_bounds = []
+        self.listfit_bound_lines = []
+        self.listfit_components = []
+        self.listfit_fits = []  # Stores completed listfit results
+        self.listfit_component_lines = {}  # Store plotted component lines by component ID
 
         self.redshift_estimation_mode = False
         self.rest_wavelength = None  # Set to `None` if no initial rest wavelength
@@ -546,7 +554,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
         self.update_ticks(self.ax)
 
         # Set the custom window title
-        self.fig.canvas.manager.set_window_title("QASAP - Quick Analysis of Spectra and Profiles (v0.5)")
+        self.fig.canvas.manager.set_window_title("QASAP - Quick Analysis of Spectra and Profiles (v0.7)")
 
         self.ax.legend()
 
@@ -2652,6 +2660,44 @@ class SpectrumPlotter(QtWidgets.QWidget):
                     plt.draw()  # Redraw the plot after removal
                     break  # Exit the loop after the first match
 
+        # Listfit mode - activate with 'l' key
+        if event.key == 'l':
+            self.listfit_mode = True
+            self.listfit_bounds = []
+            self.listfit_bound_lines = []
+            self.listfit_components = []
+            print("Listfit mode: Use the spacebar to define left and right boundaries.")
+
+        # Set Listfit bounds with space bar
+        if event.key == ' ' and self.listfit_mode:
+            if len(self.listfit_bounds) == 0 or (len(self.listfit_bounds) == 1 and self.listfit_bounds[0] is not None):
+                # Start a new region
+                self.listfit_bounds.append(event.xdata)
+                line = self.ax.axvline(event.xdata, color='green', linestyle='--')
+                self.listfit_bound_lines.append(line)
+                print(f"Listfit bound start: {event.xdata:.2f}. Press space again to set end bound.")
+                plt.draw()
+            elif len(self.listfit_bounds) == 1:
+                # Set the end bound
+                self.listfit_bounds.append(event.xdata)
+                line = self.ax.axvline(event.xdata, color='green', linestyle='--')
+                self.listfit_bound_lines.append(line)
+                print(f"Listfit bound end: {event.xdata:.2f}. Opening component selection dialog...")
+                plt.draw()
+                
+                # Show the listfit window
+                self.show_listfit_window()
+
+        # Exit listfit mode with Escape
+        if event.key == 'escape' and self.listfit_mode:
+            self.listfit_mode = False
+            for line in self.listfit_bound_lines:
+                line.remove()
+            self.listfit_bound_lines.clear()
+            self.listfit_bounds = []
+            plt.draw()
+            print("Exiting listfit mode.")
+
         # Set Gaussian bounds with space bar
         if event.key == ' ' and (self.gaussian_mode or self.multi_gaussian_mode_old):
             line_id = None
@@ -4056,6 +4102,232 @@ class SpectrumPlotter(QtWidgets.QWidget):
                     print(f"Removed marker within bounds ({left_bound}, {right_bound})")
                     plt.draw()
                     break
+
+    def show_listfit_window(self):
+        """Display the listfit component selection window"""
+        self.listfit_window = ListfitWindow(self.listfit_bounds)
+        self.listfit_window.fit_requested.connect(self.perform_listfit)
+        self.listfit_window.show()
+
+    def perform_listfit(self, components):
+        """Perform multi-component fitting"""
+        if not self.listfit_bounds or len(self.listfit_bounds) < 2:
+            print("Error: Invalid bounds for listfit")
+            return
+        
+        left_bound, right_bound = sorted(self.listfit_bounds)
+        
+        # Extract data within bounds
+        mask = (self.x_data >= left_bound) & (self.x_data <= right_bound)
+        x_fit = self.x_data[mask]
+        y_fit = self.spec[mask]
+        err_fit = self.err[mask]
+        
+        if len(x_fit) == 0:
+            print("Error: No data within bounds")
+            return
+        
+        # Build the composite model
+        composite_model = self.build_composite_model(components, x_fit, y_fit, err_fit)
+        
+        if composite_model is None:
+            print("Error: Could not build composite model")
+            return
+        
+        # Perform the fit
+        result = composite_model.fit(y_fit, x=x_fit, weights=1.0/err_fit)
+        
+        if not result.success:
+            print(f"Fit failed: {result.message}")
+            return
+        
+        print("Listfit completed successfully!")
+        print(result.fit_report())
+        
+        # Plot the components
+        self.plot_listfit_components(result, components, x_fit, y_fit, err_fit, left_bound, right_bound)
+        
+        # Store the fit
+        self.listfit_fits.append({
+            'bounds': (left_bound, right_bound),
+            'components': components,
+            'result': result,
+            'x_data': x_fit,
+            'y_data': y_fit,
+            'err_data': err_fit
+        })
+        
+        # Clear listfit mode
+        self.listfit_mode = False
+        for line in self.listfit_bound_lines:
+            line.remove()
+        self.listfit_bound_lines.clear()
+        self.listfit_bounds = []
+        
+        plt.draw()
+
+    def build_composite_model(self, components, x_fit, y_fit, err_fit):
+        """Build a composite lmfit Model from component list"""
+        model = None
+        
+        for comp in components:
+            if comp['type'] == 'gaussian':
+                # Find reasonable initial guess
+                peak_idx = np.argmax(np.abs(y_fit))
+                peak_y = y_fit[peak_idx]
+                peak_x = x_fit[peak_idx]
+                
+                amp_guess = peak_y
+                center_guess = peak_x
+                sigma_guess = (x_fit[-1] - x_fit[0]) / 10.0
+                
+                gauss_model = Model(self.gaussian, prefix='g_', independent_vars=['x'])
+                gauss_model.set_param_hint('g_amp', value=amp_guess)
+                gauss_model.set_param_hint('g_mean', value=center_guess)
+                gauss_model.set_param_hint('g_stddev', value=sigma_guess, min=1e-6)
+                
+                if model is None:
+                    model = gauss_model
+                else:
+                    model = model + gauss_model
+            
+            elif comp['type'] == 'voigt':
+                # Find reasonable initial guess
+                peak_idx = np.argmax(np.abs(y_fit))
+                peak_y = y_fit[peak_idx]
+                peak_x = x_fit[peak_idx]
+                
+                amp_guess = peak_y
+                center_guess = peak_x
+                sigma_guess = (x_fit[-1] - x_fit[0]) / 10.0
+                gamma_guess = sigma_guess / 2.0
+                
+                voigt_model = Model(self.voigt, prefix='v_', independent_vars=['x'])
+                voigt_model.set_param_hint('v_amp', value=amp_guess)
+                voigt_model.set_param_hint('v_center', value=center_guess)
+                voigt_model.set_param_hint('v_sigma', value=sigma_guess, min=1e-6)
+                voigt_model.set_param_hint('v_gamma', value=gamma_guess, min=1e-6)
+                
+                if model is None:
+                    model = voigt_model
+                else:
+                    model = model + voigt_model
+            
+            elif comp['type'] == 'polynomial':
+                order = comp.get('order', 1)
+                # Create polynomial model
+                coeffs = np.polyfit(x_fit, y_fit, order)
+                poly_model = Model(lambda x, **params: np.polyval([params.get(f'c{i}', coeffs[i]) for i in range(order+1)], x), 
+                                   prefix='p_', independent_vars=['x'])
+                
+                for i in range(order + 1):
+                    poly_model.set_param_hint(f'p_c{i}', value=coeffs[i])
+                
+                if model is None:
+                    model = poly_model
+                else:
+                    model = model + poly_model
+        
+        return model
+
+    def plot_listfit_components(self, result, components, x_fit, y_fit, err_fit, left_bound, right_bound):
+        """Plot the fitted components with different colors"""
+        x_smooth = np.linspace(x_fit.min(), x_fit.max(), len(x_fit) * 10)
+        
+        # Color mapping for components
+        colors = {'gaussian': 'red', 'voigt': 'orange', 'polynomial': 'magenta'}
+        
+        # Plot individual components
+        component_count = {'gaussian': 0, 'voigt': 0, 'polynomial': 0}
+        for comp in components:
+            comp_type = comp['type']
+            component_count[comp_type] += 1
+            color = colors[comp_type]
+            
+            # Extract component from result
+            params = result.params
+            
+            if comp_type == 'gaussian' and component_count[comp_type] > 0:
+                # Assuming single component for now
+                g_amp = params.get('g_amp', 0).value
+                g_mean = params.get('g_mean', 0).value
+                g_stddev = params.get('g_stddev', 0).value
+                if g_amp and g_mean and g_stddev:
+                    y_component = self.gaussian(x_smooth, g_amp, g_mean, g_stddev)
+                    line, = self.ax.plot(x_smooth, y_component, color=color, linestyle='--', linewidth=2, label=f'Gaussian {component_count[comp_type]}')
+                    
+                    # Also add to gaussian_fits for redshift mode selection
+                    gaussian_fit = {
+                        'fit_id': self.fit_id,
+                        'is_velocity_mode': self.is_velocity_mode,
+                        'component_id': self.component_id,
+                        'amp': g_amp, 'amp_err': 0.0,
+                        'mean': g_mean, 'mean_err': 0.0,
+                        'stddev': g_stddev, 'stddev_err': 0.0,
+                        'bounds': (left_bound, right_bound),
+                        'line_id': None,
+                        'line_wavelength': None,
+                        'line': line,
+                        'rest_wavelength': self.rest_wavelength,
+                        'rest_id': self.rest_id,
+                        'z_sys': self.redshift
+                    }
+                    self.gaussian_fits.append(gaussian_fit)
+                    self.component_id += 1
+                    
+                    # Store component line reference
+                    comp_id = len(self.listfit_component_lines)
+                    self.listfit_component_lines[comp_id] = {'type': 'gaussian', 'line': line, 'params': {'amp': g_amp, 'mean': g_mean, 'sigma': g_stddev}}
+            
+            elif comp_type == 'voigt' and component_count[comp_type] > 0:
+                v_amp = params.get('v_amp', 0).value
+                v_center = params.get('v_center', 0).value
+                v_sigma = params.get('v_sigma', 0).value
+                v_gamma = params.get('v_gamma', 0).value
+                if v_amp and v_center and v_sigma and v_gamma:
+                    y_component = self.voigt(x_smooth, v_amp, v_center, v_sigma, v_gamma)
+                    line, = self.ax.plot(x_smooth, y_component, color=color, linestyle='--', linewidth=2, label=f'Voigt {component_count[comp_type]}')
+                    
+                    # Also add to voigt_fits for redshift mode selection
+                    voigt_fit = {
+                        'fit_id': self.fit_id,
+                        'is_velocity_mode': self.is_velocity_mode,
+                        'component_id': self.component_id,
+                        'amp': v_amp, 'amp_err': 0.0,
+                        'center': v_center, 'center_err': 0.0,
+                        'sigma': v_sigma, 'sigma_err': 0.0,
+                        'gamma': v_gamma, 'gamma_err': 0.0,
+                        'bounds': (left_bound, right_bound),
+                        'line_id': None,
+                        'line_wavelength': None,
+                        'line': line,
+                        'rest_wavelength': self.rest_wavelength,
+                        'rest_id': self.rest_id,
+                        'z_sys': self.redshift
+                    }
+                    self.voigt_fits.append(voigt_fit)
+                    self.component_id += 1
+                    
+                    # Store component line reference
+                    comp_id = len(self.listfit_component_lines)
+                    self.listfit_component_lines[comp_id] = {'type': 'voigt', 'line': line, 'params': {'amp': v_amp, 'center': v_center, 'sigma': v_sigma, 'gamma': v_gamma}}
+            
+            elif comp_type == 'polynomial':
+                order = comp.get('order', 1)
+                # Extract polynomial coefficients from result
+                poly_coeffs = []
+                for i in range(order + 1):
+                    poly_coeffs.append(params.get(f'p_c{i}', 0).value)
+                y_component = np.polyval(poly_coeffs, x_smooth)
+                self.ax.plot(x_smooth, y_component, color=color, linestyle='--', linewidth=2, label=f'Polynomial ({order})')
+        
+        # Plot total fit
+        y_total = result.best_fit
+        self.ax.plot(x_fit, y_total, color='green', linestyle='-', linewidth=2.5, label='Total Fit', zorder=10)
+        
+        self.ax.legend()
+
+
             for label in self.labels:
                 left_bound, right_bound = getattr(label, 'bounds')
                 if left_bound <= x_pos <= right_bound:
