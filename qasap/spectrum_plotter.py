@@ -2678,6 +2678,10 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 'is_velocity_mode': self.is_velocity_mode
             }
             self.continuum_fits.append(continuum_fit)
+            # Register with ItemTracker
+            bounds_str = f"λ: {region_bounds[0]:.2f}-{region_bounds[1]:.2f} Å"
+            self.register_item('continuum', f'Continuum (order {self.poly_order})', fit_dict=continuum_fit,
+                             line_obj=continuum_line, position=bounds_str, color='magenta')
             self.continuum_regions = [] # Clear continuum_regions
             self.continuum_mode = False # Exit continuum mode
             self.label_poly_order.hide()
@@ -4378,6 +4382,10 @@ class SpectrumPlotter(QtWidgets.QWidget):
                     'z_sys': self.redshift
                 }
                 self.gaussian_fits.append(gaussian_fit)
+                # Register with ItemTracker
+                position_str = f"λ: {g_mean:.2f} Å"
+                item_id = self.register_item('gaussian', f'Gaussian {gauss_count+1}', fit_dict=gaussian_fit, 
+                                           line_obj=line, position=position_str, color=color)
                 self.component_id += 1
                 gauss_count += 1
             
@@ -4409,6 +4417,10 @@ class SpectrumPlotter(QtWidgets.QWidget):
                     'z_sys': self.redshift
                 }
                 self.voigt_fits.append(voigt_fit)
+                # Register with ItemTracker
+                position_str = f"λ: {v_center:.2f} Å"
+                item_id = self.register_item('voigt', f'Voigt {voigt_count+1}', fit_dict=voigt_fit,
+                                           line_obj=line, position=position_str, color=color)
                 self.component_id += 1
                 voigt_count += 1
             
@@ -4419,7 +4431,10 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 for i in range(order + 1):
                     poly_coeffs.append(params[f'{prefix}c{i}'].value)
                 y_component = np.polyval(poly_coeffs, x_smooth)
-                self.ax.plot(x_smooth, y_component, color=color, linestyle='--', linewidth=2, label=f'Polynomial ({order})')
+                line, = self.ax.plot(x_smooth, y_component, color=color, linestyle='--', linewidth=2, label=f'Polynomial ({order})')
+                # Register with ItemTracker
+                position_str = f"λ: {left_bound:.2f}-{right_bound:.2f} Å"
+                item_id = self.register_item('polynomial', f'Polynomial (order={order})', position=position_str, color=color)
                 poly_count += 1
         
         # Plot total fit
