@@ -1,4 +1,4 @@
-# QASAP — Quick Analysis of Spectra and Profiles Package
+# QASAP — Quick Analysis of Spectra and Profiles
 ## Version 0.8
 
 Interactive Python tool for comprehensive 1D spectral analysis with intelligent file format detection. QASAP provides both quick-look functionality and advanced analysis features including multi-component line fitting, continuum modeling, and Bayesian MCMC fitting.
