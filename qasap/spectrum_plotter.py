@@ -2961,7 +2961,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
                     y_plt = interpolator(x_plt)
                     fit_line, = self.ax.plot(x_plt, y_plt, color='red', linestyle='--')
                     left_bound, right_bound = bound_pairs[i // 3]
-                    self.gaussian_fits.append({
+                    gaussian_fit = {
                     'fit_id': self.fit_id,
                     'is_velocity_mode': self.is_velocity_mode,
                     'chi2': chi2,
@@ -2975,7 +2975,12 @@ class SpectrumPlotter(QtWidgets.QWidget):
                     'rest_wavelength': self.rest_wavelength,
                     'rest_id': self.rest_id,
                     'z_sys': self.redshift
-                    })
+                    }
+                    self.gaussian_fits.append(gaussian_fit)
+                    # Register with ItemTracker
+                    position_str = f"λ: {mean:.2f} Å"
+                    self.register_item('gaussian', f'Gaussian', fit_dict=gaussian_fit, line_obj=fit_line,
+                                     position=position_str, color='red')
                     print(f"  Fit ID: {self.fit_id}")
                     print(f"  Component ID: {self.component_id}")
                     print(f"  Velocity mode: {self.is_velocity_mode}")
@@ -3110,6 +3115,10 @@ class SpectrumPlotter(QtWidgets.QWidget):
                         fit_results['b'] = b
                         fit_results['logT_eff'] = np.log10(T_eff)
                 self.voigt_fits.append(fit_results)
+                # Register with ItemTracker
+                position_str = f"λ: {fit_results.get('center', fit_results.get('mean', 0)):.2f} Å"
+                self.register_item('voigt', f'Voigt', fit_dict=fit_results, line_obj=fit_results.get('line'),
+                                 position=position_str, color='orange')
                 print(f"  Fit ID: {self.fit_id}")
                 print(f"  Component ID: {self.component_id}")
                 print(f"  Velocity mode: {self.is_velocity_mode}")
