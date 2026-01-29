@@ -2660,8 +2660,8 @@ class SpectrumPlotter(QtWidgets.QWidget):
                     plt.draw()  # Redraw the plot after removal
                     break  # Exit the loop after the first match
 
-        # Listfit mode - activate with 'f' key
-        if event.key == 'f':
+        # Listfit mode - activate with 'h' key
+        if event.key == 'h':
             self.listfit_mode = True
             self.listfit_bounds = []
             self.listfit_bound_lines = []
@@ -2670,7 +2670,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
 
         # Set Listfit bounds with space bar
         if event.key == ' ' and self.listfit_mode:
-            if len(self.listfit_bounds) == 0 or (len(self.listfit_bounds) == 1 and self.listfit_bounds[0] is not None):
+            if len(self.listfit_bounds) == 0:
                 # Start a new region
                 self.listfit_bounds.append(event.xdata)
                 line = self.ax.axvline(event.xdata, color='green', linestyle='--')
