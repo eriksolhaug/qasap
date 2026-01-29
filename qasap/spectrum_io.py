@@ -1,25 +1,118 @@
 """
 Spectrum I/O module - handles reading various spectrum file formats
+
+Features:
+- Auto-detect common ASCII and FITS spectrum layouts
+- Intelligent format detection with confidence scoring
+- Support for 11+ file format variations
+- Optional manual format specification via fmt parameter
 """
 
 import numpy as np
+from pathlib import Path
 from astropy.io import fits
+from typing import Tuple, Optional, Dict, Any, List
 
 
 class SpectrumIO:
-    """Handle reading spectrum data from various file formats"""
+    """Handle reading spectrum data from various file formats with auto-detection"""
     
     @staticmethod
-    def read_spectrum(fits_file, file_flag=0):
+    def detect_spectrum_format(filepath: str) -> List[Dict[str, Any]]:
         """
-        Read spectrum from file based on file_flag
+        Inspect file and return candidate format keys with confidence scores.
+        
+        Returns:
+            List of dicts with keys: 
+            {"key": "ascii:3col", "score": 90, "notes": "...", "options": {...}}
+        """
+        path = Path(filepath)
+        out: List[Dict[str, Any]] = []
+        ext = path.suffix.lower()
+        
+        def add(key: str, score: int, notes: str, options: Optional[Dict[str, Any]] = None):
+            out.append({"key": key, "score": score, "notes": notes, "options": options or {}})
+        
+        # ASCII files
+        if ext in (".txt", ".dat", ".csv", ".tsv", ".sed", ".ascii"):
+            try:
+                delim, ncol = SpectrumIO._peek_ascii_layout(path)
+                if ncol >= 3:
+                    add("ascii:3col", 90, f"{ncol} columns (delimiter={repr(delim)})",
+                        {"delimiter": delim})
+                elif ncol == 2:
+                    add("ascii:2col", 85, f"2 columns (delimiter={repr(delim)})",
+                        {"delimiter": delim})
+                else:
+                    add("ascii:flex", 60, f"{ncol} columns (needs mapping)",
+                        {"delimiter": delim})
+            except Exception as e:
+                add("ascii:flex", 40, f"ASCII read error: {e!s} (manual mapping likely)")
+        
+        # FITS files
+        if ext in (".fits", ".fit", ".fts"):
+            try:
+                with fits.open(path, memmap=True) as hdul:
+                    # Primary 1D image?
+                    if len(hdul) > 0 and getattr(hdul[0], "data", None) is not None:
+                        data = hdul[0].data
+                        if isinstance(data, np.ndarray) and data.ndim == 1:
+                            add("fits:image1d", 95, "Primary HDU contains 1D image", {"hdu": 0})
+                    
+                    # Check extensions
+                    for i, h in enumerate(hdul):
+                        if not hasattr(h, "data") or h.data is None:
+                            continue
+                        
+                        if isinstance(h, (fits.BinTableHDU, fits.TableHDU)):
+                            cols = list(h.columns.names or [])
+                            lc = [c.lower() for c in cols]
+                            
+                            # Named SPECTRUM extension?
+                            extname = (h.header.get("EXTNAME") or "").upper()
+                            if extname == "SPECTRUM":
+                                add("fits:ext:spectrum", 96, "HDU 'SPECTRUM'",
+                                    {"extname": "SPECTRUM"})
+                            
+                            # Have wave/flux?
+                            has_wave = any(k in lc for k in ("wave", "lambda", "wavelength"))
+                            has_flux = any(k in lc for k in ("flux",))
+                            has_errivar = any(k in lc for k in ("err", "ivar"))
+                            
+                            if has_wave and has_flux and has_errivar:
+                                try:
+                                    rec0 = h.data[0]
+                                    wname = SpectrumIO._pick_name(["WAVE", "wave", "lambda"], cols)
+                                    fname = SpectrumIO._pick_name(["FLUX", "flux"], cols)
+                                    arrish = (hasattr(rec0[wname], "__len__") and 
+                                             hasattr(rec0[fname], "__len__"))
+                                except Exception:
+                                    arrish = False
+                                
+                                if arrish:
+                                    add("fits:table:vector", 92,
+                                        f"Table HDU[{i}] with vector row arrays", {"hdu": i})
+                                else:
+                                    add("fits:table:columns", 88,
+                                        f"Table HDU[{i}] with per-pixel columns", {"hdu": i})
+            except Exception as e:
+                add("fits:image1d", 30, f"FITS open error: {e!s}")
+        
+        return out
+    
+    @staticmethod
+    def read_spectrum(filepath: str, fmt: Optional[str] = None, options: Optional[Dict[str, Any]] = None):
+        """
+        Load a 1-D spectrum from ASCII/FITS layouts.
         
         Parameters
         ----------
-        fits_file : str
+        filepath : str
             Path to spectrum file
-        file_flag : int
-            File format identifier (0-10)
+        fmt : str, optional
+            Forced format key. If None, auto-detects
+        options : dict, optional
+            Reader options (delimiter, colmap, hdu, etc.)
             
         Returns
         -------
@@ -28,107 +121,345 @@ class SpectrumIO:
         spec : np.ndarray
             Flux array
         err : np.ndarray
-            Error array
+            Error/uncertainty array
+        meta : dict
+            Metadata including format, source, units
         """
         
-        if file_flag == 1:
-            # 3-column ASCII: wavelength, flux, error (tab-delimited)
-            data = np.genfromtxt(fits_file, comments='#', delimiter='\t')
-            wav, spec, err = data[:, 0], data[:, 1], data[:, 2]
-            
-        elif file_flag == 2:
-            # FITS: flux in hdul[0].data, wavelength from header (CRPIX1, CRVAL1, CDELT1)
-            with fits.open(fits_file) as hdul:
-                spec = hdul[0].data.flatten()
-                header = hdul[0].header
-                crpix1 = header.get('CRPIX1', 1)
-                crval1 = header.get('CRVAL1', 0)
-                cdelt1 = header.get('CDELT1', 1)
-                wav = crval1 + (np.arange(len(spec)) - (crpix1 - 1)) * cdelt1
-                err = np.ones_like(spec) * np.nanstd(spec) * 0.1
-                
-        elif file_flag == 3:
-            # 2-column ASCII: wavelength, flux (error = 10% of flux)
-            data = np.genfromtxt(fits_file, comments='#')
-            wav, spec = data[:, 0], data[:, 1]
-            err = np.ones_like(spec) * np.nanstd(spec) * 0.1
-            
-        elif file_flag == 4:
-            # 4-column ASCII: wavelength, ignored, flux, error
-            data = np.genfromtxt(fits_file, comments='#')
-            wav, spec, err = data[:, 0], data[:, 2], data[:, 3]
-            
-        elif file_flag == 5:
-            # FITS: hdul[1] with fields 'wave' and 'flux'
-            with fits.open(fits_file) as hdul:
-                data = hdul[1].data
-                wav = data['wave']
-                spec = data['flux']
-                err = np.ones_like(spec) * np.nanstd(spec) * 0.1
-                
-        elif file_flag == 6:
-            # FITS: hdul[1].data[0] = [wavelength array, flux array]
-            with fits.open(fits_file) as hdul:
-                wav = hdul[1].data[0]
-                spec = hdul[1].data[1]
-                err = np.ones_like(spec) * np.nanstd(spec) * 0.1
-                
-        elif file_flag == 7:
-            # FITS: SPECTRUM extension with 'wave', 'flux', 'ivar', 'mask'
-            with fits.open(fits_file) as hdul:
-                data = hdul['SPECTRUM'].data
-                wav = data['wave']
-                spec = data['flux']
-                ivar = data['ivar']
-                err = np.sqrt(1.0 / np.where(ivar > 0, ivar, 1e-10))
-                
-        elif file_flag == 8:
-            # FITS: Three HDUs - wavelength, flux, error
-            with fits.open(fits_file) as hdul:
-                wav = hdul[0].data.flatten()
-                spec = hdul[1].data.flatten()
-                err = hdul[2].data.flatten()
-                
-        elif file_flag == 9:
-            # FITS: Custom format 2
-            with fits.open(fits_file) as hdul:
-                spec = hdul[0].data.flatten()
-                header = hdul[0].header
-                crpix1 = header.get('CRPIX1', 1)
-                crval1 = header.get('CRVAL1', 0)
-                cdelt1 = header.get('CDELT1', 1)
-                wav = crval1 + (np.arange(len(spec)) - (crpix1 - 1)) * cdelt1
-                err = np.ones_like(spec) * np.nanstd(spec) * 0.1
-                
-        elif file_flag == 10:
-            # FITS: Custom format 3
-            with fits.open(fits_file) as hdul:
-                spec = hdul[0].data.flatten()
-                header = hdul[0].header
-                crpix1 = header.get('CRPIX1', 1)
-                crval1 = header.get('CRVAL1', 0)
-                cdelt1 = header.get('CDELT1', 1)
-                wav = crval1 + (np.arange(len(spec)) - (crpix1 - 1)) * cdelt1
-                err = np.ones_like(spec) * np.nanstd(spec) * 0.1
-                
+        filepath = Path(filepath)
+        if not filepath.exists():
+            raise FileNotFoundError(str(filepath))
+        
+        options = options or {}
+        
+        # Auto-detect if fmt not provided
+        if fmt is None:
+            candidates = SpectrumIO.detect_spectrum_format(str(filepath))
+            if not candidates:
+                raise ValueError(f"Could not determine format for: {filepath.name}")
+            # Take highest-confidence candidate
+            candidates.sort(key=lambda c: c["score"], reverse=True)
+            best = candidates[0]
+            fmt = best["key"]
+            # Merge suggested options
+            options = {**best.get("options", {}), **options}
+        
+        # Dispatch to readers
+        if fmt == "ascii:2col":
+            return SpectrumIO._read_ascii(filepath, delimiter=options.get("delimiter"),
+                                         colmap={"wave": 0, "flux": 1, "err": None},
+                                         units=options.get("units"))
+        
+        elif fmt == "ascii:3col":
+            return SpectrumIO._read_ascii(filepath, delimiter=options.get("delimiter"),
+                                         colmap={"wave": 0, "flux": 1, "err": 2},
+                                         units=options.get("units"))
+        
+        elif fmt == "ascii:flex":
+            cm = options.get("colmap", {"wave": 0, "flux": 1, "err": None})
+            return SpectrumIO._read_ascii(filepath, delimiter=options.get("delimiter"),
+                                         colmap=cm, units=options.get("units"))
+        
+        elif fmt == "fits:image1d":
+            return SpectrumIO._read_fits_image1d(filepath, hdu=options.get("hdu", 0))
+        
+        elif fmt == "fits:table:vector":
+            return SpectrumIO._read_fits_table_vector(
+                filepath,
+                hdu=options.get("hdu", 1),
+                wave_cols=options.get("wave_cols", ["WAVE", "wave", "lambda"]),
+                flux_cols=options.get("flux_cols", ["FLUX", "flux"]),
+                err_cols=options.get("err_cols", ["ERR", "err"]),
+                ivar_cols=options.get("ivar_cols", ["IVAR", "ivar"]),
+                row=options.get("row", 0)
+            )
+        
+        elif fmt == "fits:table:columns":
+            return SpectrumIO._read_fits_table_columns(
+                filepath,
+                hdu=options.get("hdu", 1),
+                wave_cols=options.get("wave_cols", ["WAVE", "wave", "lambda"]),
+                flux_cols=options.get("flux_cols", ["FLUX", "flux"]),
+                err_cols=options.get("err_cols", ["ERR", "err"]),
+                ivar_cols=options.get("ivar_cols", ["IVAR", "ivar"])
+            )
+        
+        elif fmt == "fits:ext:spectrum":
+            return SpectrumIO._read_fits_named_spectrum(filepath, 
+                                                       extname=options.get("extname", "SPECTRUM"))
+        
         else:
-            # Default: Three HDUs
-            with fits.open(fits_file) as hdul:
-                wav = hdul[0].data.flatten()
-                spec = hdul[1].data.flatten()
-                err = hdul[2].data.flatten()
-        
-        # Clean up NaNs
-        mask = ~np.isnan(spec) & ~np.isnan(wav)
-        wav = wav[mask]
-        spec = spec[mask]
-        err = err[mask]
-        
-        return wav, spec, err
+            raise ValueError(f"Unsupported format key: {fmt}")
+    
+    # ===== ASCII readers =====
     
     @staticmethod
-    def read_lines(filename='emlines.txt'):
-        """Read emission line catalog"""
+    def _peek_ascii_layout(path: Path, max_lines: int = 200) -> Tuple[str, int]:
+        """Return (delimiter, ncol) by scanning first few non-comment lines."""
+        trials = [("\t", "tab"), (",", "comma"), (" ", "space")]
+        rows: List[str] = []
+        
+        with open(path, "r") as f:
+            for line in f:
+                s = line.strip()
+                if not s or s.startswith("#"):
+                    continue
+                rows.append(s)
+                if len(rows) >= 5:
+                    break
+        
+        if not rows:
+            return ("\t", 0)
+        
+        best_delim = "\t"
+        best_ncol = 0
+        for delim, _name in trials:
+            counts = [len(r.split(delim)) for r in rows]
+            ncol = max(counts) if counts else 0
+            if ncol > best_ncol:
+                best_ncol = ncol
+                best_delim = delim
+        return (best_delim, best_ncol)
+    
+    @staticmethod
+    def _read_ascii(path: Path, delimiter: Optional[str],
+                   colmap: Dict[str, Optional[int]],
+                   units: Optional[str] = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Dict]:
+        """Generic ASCII reader (2 or 3 columns typical)."""
+        data = np.genfromtxt(path, comments="#", delimiter=delimiter)
+        if data.ndim == 1:
+            data = data[None, :]
+        ncol = data.shape[1]
+        
+        def pick(idx: Optional[int], default=None):
+            if idx is None:
+                return default
+            if idx < 0 or idx >= ncol:
+                raise ValueError(f"Requested column {idx} but file has {ncol} columns.")
+            return data[:, idx]
+        
+        wav = np.asarray(pick(colmap.get("wave")))
+        flux = np.asarray(pick(colmap.get("flux")))
+        err = pick(colmap.get("err"))
+        
+        if wav is None or flux is None:
+            raise ValueError("ASCII reader requires at least wave & flux columns.")
+        
+        # Unit conversion for wavelength
+        if units:
+            u = str(units).lower()
+            if u in ("nm", "nanometer", "nanometers"):
+                wav = wav * 10.0  # nm -> Å
+            elif u in ("um", "micron", "microns", "µm", "μm"):
+                wav = wav * 1e4  # µm -> Å
+        
+        if err is not None:
+            err = np.asarray(err)
+        else:
+            err = np.abs(flux) * 0.10  # 10% as placeholder
+        
+        wave_unit = {"a": "Å", "angstrom": "Å", "nm": "nm", "um": "µm", "μm": "µm"}.get(
+            (str(units).lower() if units else "a"), "Å")
+        
+        meta = {
+            "source": "ascii",
+            "path": str(path),
+            "delimiter": delimiter,
+            "colmap": colmap,
+            "units": units,
+            "wave_unit": wave_unit,
+            "flux_unit": "adu",
+            "ncol": ncol,
+        }
+        return wav, flux, err, meta
+    
+    # ===== FITS readers =====
+    
+    @staticmethod
+    def _pick_name(preferred: List[str], available: List[str]) -> str:
+        """Pick first name in preferred that exists in available (case-insensitive)."""
+        aset = {a: a for a in available}
+        lower = {a.lower(): a for a in available}
+        for p in preferred:
+            if p in aset:
+                return p
+            pl = p.lower()
+            if pl in lower:
+                return lower[pl]
+        raise KeyError(f"None of {preferred} found in: {available}")
+    
+    @staticmethod
+    def _read_fits_image1d(path: Path, hdu: int = 0) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Dict]:
+        """Read 1D image from FITS HDU."""
+        with fits.open(path, memmap=True) as hdul:
+            h = hdul[hdu]
+            spec = np.asarray(h.data, dtype=float).flatten()
+            
+            # Get wavelength from header
+            header = h.header
+            crpix1 = header.get('CRPIX1', 1)
+            crval1 = header.get('CRVAL1', 0)
+            cdelt1 = header.get('CDELT1', 1)
+            wav = crval1 + (np.arange(len(spec)) - (crpix1 - 1)) * cdelt1
+            
+            # Error from noise or 10% of signal
+            err = np.ones_like(spec) * np.nanstd(spec) * 0.1
+            
+            meta = {
+                "source": "fits:image1d",
+                "path": str(path),
+                "hdu": hdu,
+                "wave_unit": "Å",
+                "flux_unit": "adu",
+            }
+            return wav, spec, err, meta
+    
+    @staticmethod
+    def _read_fits_table_vector(path: Path, hdu: int = 1,
+                               wave_cols: List[str] = None,
+                               flux_cols: List[str] = None,
+                               err_cols: List[str] = None,
+                               ivar_cols: List[str] = None,
+                               row: int = 0) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Dict]:
+        """Read FITS table where wave/flux are vector arrays in a single row."""
+        if wave_cols is None:
+            wave_cols = ["WAVE", "wave", "lambda"]
+        if flux_cols is None:
+            flux_cols = ["FLUX", "flux"]
+        if err_cols is None:
+            err_cols = ["ERR", "err"]
+        if ivar_cols is None:
+            ivar_cols = ["IVAR", "ivar"]
+        
+        with fits.open(path, memmap=True) as hdul:
+            h = hdul[hdu]
+            data = h.data
+            cols = list(h.columns.names or [])
+            
+            wname = SpectrumIO._pick_name(wave_cols, cols)
+            fname = SpectrumIO._pick_name(flux_cols, cols)
+            
+            rec = data[row]
+            wav = np.asarray(rec[wname], dtype=float)
+            flux = np.asarray(rec[fname], dtype=float)
+            
+            # Try error or ivar
+            try:
+                ename = SpectrumIO._pick_name(err_cols, cols)
+                err = np.asarray(rec[ename], dtype=float)
+            except Exception:
+                try:
+                    iname = SpectrumIO._pick_name(ivar_cols, cols)
+                    ivar = np.asarray(rec[iname], dtype=float)
+                    err = np.sqrt(1.0 / np.where(ivar > 0, ivar, 1e-10))
+                except Exception:
+                    err = np.abs(flux) * 0.10
+            
+            meta = {
+                "source": "fits:table:vector",
+                "path": str(path),
+                "hdu": hdu,
+                "wave_unit": "Å",
+                "flux_unit": "adu",
+            }
+            return wav, flux, err, meta
+    
+    @staticmethod
+    def _read_fits_table_columns(path: Path, hdu: int = 1,
+                                wave_cols: List[str] = None,
+                                flux_cols: List[str] = None,
+                                err_cols: List[str] = None,
+                                ivar_cols: List[str] = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Dict]:
+        """Read FITS table where each spectrum pixel is a separate row."""
+        if wave_cols is None:
+            wave_cols = ["WAVE", "wave", "lambda"]
+        if flux_cols is None:
+            flux_cols = ["FLUX", "flux"]
+        if err_cols is None:
+            err_cols = ["ERR", "err"]
+        if ivar_cols is None:
+            ivar_cols = ["IVAR", "ivar"]
+        
+        with fits.open(path, memmap=True) as hdul:
+            h = hdul[hdu]
+            data = h.data
+            cols = list(h.columns.names or [])
+            
+            wname = SpectrumIO._pick_name(wave_cols, cols)
+            fname = SpectrumIO._pick_name(flux_cols, cols)
+            
+            wav = np.asarray(data[wname], dtype=float)
+            flux = np.asarray(data[fname], dtype=float)
+            
+            # Try error or ivar
+            try:
+                ename = SpectrumIO._pick_name(err_cols, cols)
+                err = np.asarray(data[ename], dtype=float)
+            except Exception:
+                try:
+                    iname = SpectrumIO._pick_name(ivar_cols, cols)
+                    ivar = np.asarray(data[iname], dtype=float)
+                    err = np.sqrt(1.0 / np.where(ivar > 0, ivar, 1e-10))
+                except Exception:
+                    err = np.abs(flux) * 0.10
+            
+            meta = {
+                "source": "fits:table:columns",
+                "path": str(path),
+                "hdu": hdu,
+                "wave_unit": "Å",
+                "flux_unit": "adu",
+            }
+            return wav, flux, err, meta
+    
+    @staticmethod
+    def _read_fits_named_spectrum(path: Path, extname: str = "SPECTRUM") -> Tuple[np.ndarray, np.ndarray, np.ndarray, Dict]:
+        """Read FITS SPECTRUM extension."""
+        with fits.open(path, memmap=True) as hdul:
+            h = hdul[extname]
+            data = h.data
+            if data is None:
+                raise ValueError(f"HDU '{extname}' has no data.")
+            
+            cols = list(data.columns.names or [])
+            
+            try:
+                wname = SpectrumIO._pick_name(["WAVE", "wave", "lambda"], cols)
+                fname = SpectrumIO._pick_name(["FLUX", "flux"], cols)
+                
+                rec0 = data[0]
+                wav = np.asarray(rec0[wname], dtype=float)
+                flux = np.asarray(rec0[fname], dtype=float)
+                
+                # Try error or ivar
+                try:
+                    ename = SpectrumIO._pick_name(["ERR", "err"], cols)
+                    err = np.asarray(rec0[ename], dtype=float)
+                except Exception:
+                    try:
+                        iname = SpectrumIO._pick_name(["IVAR", "ivar"], cols)
+                        ivar = np.asarray(rec0[iname], dtype=float)
+                        err = np.sqrt(1.0 / np.where(ivar > 0, ivar, 1e-10))
+                    except Exception:
+                        err = np.abs(flux) * 0.10
+                
+                meta = {
+                    "source": "fits:ext:spectrum",
+                    "path": str(path),
+                    "extname": extname,
+                    "wave_unit": "Å",
+                    "flux_unit": "adu",
+                }
+                return wav, flux, err, meta
+            
+            except Exception as e:
+                raise ValueError(f"Could not read SPECTRUM extension: {e}")
+    
+    # ===== Utility readers =====
+    
+    @staticmethod
+    def read_lines(filename='emlines.txt') -> Tuple[np.ndarray, np.ndarray]:
+        """Read emission line catalog."""
         try:
             data = np.genfromtxt(filename, dtype=str, delimiter=',')
             return data[:, 1].astype(float), data[:, 0]
@@ -137,8 +468,8 @@ class SpectrumIO:
             return np.array([]), np.array([])
     
     @staticmethod
-    def read_oscillator_strengths(filename='emlines_osc.txt'):
-        """Read emission lines with oscillator strengths"""
+    def read_oscillator_strengths(filename='emlines_osc.txt') -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Read emission lines with oscillator strengths."""
         try:
             data = np.genfromtxt(filename, dtype=str, delimiter=',')
             return data[:, 1].astype(float), data[:, 0], data[:, 2].astype(float)
@@ -147,8 +478,8 @@ class SpectrumIO:
             return np.array([]), np.array([]), np.array([])
     
     @staticmethod
-    def read_instrument_bands(filename='instrument_bands.txt'):
-        """Read instrument filter definitions"""
+    def read_instrument_bands(filename='instrument_bands.txt') -> Tuple[List[Tuple], np.ndarray]:
+        """Read instrument filter definitions."""
         try:
             data = np.genfromtxt(filename, dtype=str, delimiter=',')
             band_ranges = list(zip(data[:, 1].astype(float), data[:, 2].astype(float)))
