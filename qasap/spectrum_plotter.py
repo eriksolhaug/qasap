@@ -1612,7 +1612,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
             self.redshift_estimation_mode = False
             print('Exiting redshift estimation mode.')
         
-    def register_item(self, item_type, name, fit_dict=None, line_obj=None):
+    def register_item(self, item_type, name, fit_dict=None, line_obj=None, position='', color='gray'):
         """Register an item with the tracker"""
         item_id = f"{item_type}_{self.item_id_counter}"
         self.item_id_counter += 1
@@ -1620,9 +1620,11 @@ class SpectrumPlotter(QtWidgets.QWidget):
             'type': item_type,
             'fit_dict': fit_dict,
             'line_obj': line_obj,
-            'name': name
+            'name': name,
+            'position': position,
+            'color': color
         }
-        self.item_tracker.add_item(item_id, item_type, name, line_obj)
+        self.item_tracker.add_item(item_id, item_type, name, position=position, color=color, line_obj=line_obj)
         return item_id
     
     def unregister_item(self, item_id):
