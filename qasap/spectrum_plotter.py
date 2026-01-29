@@ -2660,8 +2660,8 @@ class SpectrumPlotter(QtWidgets.QWidget):
                     plt.draw()  # Redraw the plot after removal
                     break  # Exit the loop after the first match
 
-        # Listfit mode - activate with 'l' key
-        if event.key == 'l':
+        # Listfit mode - activate with 'f' key
+        if event.key == 'f':
             self.listfit_mode = True
             self.listfit_bounds = []
             self.listfit_bound_lines = []
