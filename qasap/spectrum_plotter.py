@@ -1774,6 +1774,20 @@ class SpectrumPlotter(QtWidgets.QWidget):
     def estimate_redshift(self, selected_id, selected_wavelength):
         self.selected_id, self.selected_rest_wavelength = selected_id, selected_wavelength  # Store the selected wavelength
         if self.selected_id is not None and self.selected_rest_wavelength is not None:
+            # Extract center from selected fit if not already set
+            if not hasattr(self, 'center_profile') or self.center_profile is None:
+                # Try to get from selected Gaussian
+                if self.selected_gaussian:
+                    self.center_profile = self.selected_gaussian.get('mean')
+                    self.center_profile_err = self.selected_gaussian.get('mean_err')
+                # Try to get from selected Voigt
+                elif self.selected_voigt:
+                    self.center_profile = self.selected_voigt.get('center')
+                    self.center_profile_err = self.selected_voigt.get('center_err')
+                else:
+                    print("Error: No Gaussian or Voigt selected for redshift estimation")
+                    return
+            
             est_redshift = (self.center_profile - self.selected_rest_wavelength) / self.selected_rest_wavelength
             est_redshift_err = self.center_profile_err / self.selected_rest_wavelength
             print(f"Estimated Redshift: {est_redshift:.6f}+-{est_redshift_err:.6f}")
