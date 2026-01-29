@@ -571,6 +571,11 @@ class SpectrumPlotter(QtWidgets.QWidget):
         # self.fig.canvas.setFocus() # Removed this because it was not needed
         # self.fig.canvas.draw() # Removed this because it was not needed
 
+        # Show the Item Tracker window (in background)
+        self.item_tracker.item_deleted.connect(self.on_item_deleted_from_tracker)
+        self.item_tracker.setGeometry(1100, 700, 650, 350)  # Position on the right side
+        self.item_tracker.show()
+
         plt.show()
 
         self.fig.canvas.setFocus() # Removed this because it was not needed
@@ -1537,11 +1542,18 @@ class SpectrumPlotter(QtWidgets.QWidget):
         print(f"Amplitude: {fit['amp']}, Mean: {fit['mean']}, Sigma: {fit['stddev']}")  # Debug print
 
         gaussian_curve = fit['amp'] * np.exp(-0.5 * ((x - fit['mean']) / fit['stddev']) ** 2)
-        _, a, b = self.get_existing_continuum(left_bound, right_bound)
-        existing_continuum = self.continuum_model(x, a, b) # Make continuum with same dimensions as gaussian curve
+        continuum_vals, a, b = self.get_existing_continuum(left_bound, right_bound)
+        
+        # Handle case where no continuum exists
+        if continuum_vals is None:
+            plot_data = gaussian_curve
+        else:
+            existing_continuum = self.continuum_model(x, a, b) # Make continuum with same dimensions as gaussian curve
+            plot_data = gaussian_curve + existing_continuum
+            
         if hasattr(self, 'current_gaussian_plot') and self.current_gaussian_plot:
             self.current_gaussian_plot.remove() # Remove any previous plot of the selected gaussian
-        self.current_gaussian_plot = self.ax.plot(x, gaussian_curve+existing_continuum, color='lime', linestyle='-', linewidth=2)[0]  # Store the first element (line object)
+        self.current_gaussian_plot = self.ax.plot(x, plot_data, color='lime', linestyle='-', linewidth=2)[0]  # Store the first element (line object)
         plt.draw()  # Refresh the plot
 
     def plot_redshift_voigt(self, fit):
@@ -1556,11 +1568,18 @@ class SpectrumPlotter(QtWidgets.QWidget):
         print(f"Amplitude: {amp}, Center: {center}, Sigma: {sigma}, Gamma: {gamma}")
 
         voigt_curve = self.voigt(x, amp, center, sigma, gamma)
-        _, a, b = self.get_existing_continuum(left_bound, right_bound)
-        existing_continuum = self.continuum_model(x, a, b)
+        continuum_vals, a, b = self.get_existing_continuum(left_bound, right_bound)
+        
+        # Handle case where no continuum exists
+        if continuum_vals is None:
+            plot_data = voigt_curve
+        else:
+            existing_continuum = self.continuum_model(x, a, b)
+            plot_data = voigt_curve + existing_continuum
+            
         if hasattr(self, 'current_voigt_plot') and self.current_voigt_plot:
             self.current_voigt_plot.remove()
-        self.current_voigt_plot = self.ax.plot(x, voigt_curve + existing_continuum, color='lime', linestyle='-', linewidth=2)[0]
+        self.current_voigt_plot = self.ax.plot(x, plot_data, color='lime', linestyle='-', linewidth=2)[0]
         plt.draw()  # Refresh the plot to show the updated Voigt profile
 
     def display_linelist(self):
