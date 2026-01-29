@@ -154,11 +154,24 @@ Examples:
             
             # Launch interactive GUI plotter
             print("\nLaunching interactive plotter...\n")
+            
+            # Determine file_flag from format
+            file_flag_map = {
+                'ascii:2col': 10,
+                'ascii:3col': 3,
+                'ascii:flex': 3,
+                'fits:image1d': 2,
+                'fits:table:vector': 5,
+                'fits:table:columns': 9,
+                'fits:ext:spectrum': 7,
+            }
+            file_flag = file_flag_map.get(best['key'], 0) if 'best' in locals() else 0
+            
             plotter = SpectrumPlotter(
                 fits_file=args.fits_file,
                 redshift=args.redshift,
                 zoom_factor=0.1,
-                file_flag=0,
+                file_flag=file_flag,
                 alfosc=args.alfosc,
                 alfosc_bin=args.bin,
                 alfosc_left=args.left or 0,

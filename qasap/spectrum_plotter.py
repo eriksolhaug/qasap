@@ -27,6 +27,9 @@ from datetime import datetime
 import ast
 import re
 
+# Import LineListWindow from sibling module
+from .linelist_window import LineListWindow
+
 class SpectrumPlotter(QtWidgets.QWidget):
     def __init__(self, fits_file, redshift=0.0, zoom_factor=0.1, file_flag=0, alfosc=False, alfosc_bin=10, alfosc_left=0, alfosc_right=0, alfosc_output="", lsf="10",):
         super().__init__()
@@ -1922,8 +1925,17 @@ class SpectrumPlotter(QtWidgets.QWidget):
         y = self.spec[mask]
         yerr = self.err[mask]# if hasattr(self, "err") else np.ones_like(y) * np.std(y) 
 
-        # Ask user for polynomial order
-        poly_order = int(input("Enter polynomial order for continuum: "))
+        # Ask user for polynomial order using Qt dialog
+        poly_order_str, ok = QtWidgets.QInputDialog.getText(
+            self, 'Polynomial Order', 'Enter polynomial order for continuum:'
+        )
+        if not ok or not poly_order_str.strip():
+            return
+        try:
+            poly_order = int(poly_order_str)
+        except ValueError:
+            QtWidgets.QMessageBox.warning(self, 'Error', 'Please enter a valid integer')
+            return
 
         # Get initial polynomial guess from existing continuum
         _, slope, intercept = self.get_existing_continuum(left, right)
@@ -1933,9 +1945,13 @@ class SpectrumPlotter(QtWidgets.QWidget):
             poly_guess = [0.0] * (poly_order + 1)  # Initialize all coefficients to 0
             poly_guess[-1] = np.mean(y)      # Set the intercept
 
-        # Ask user for mask region(s)
-        user_input = input("Do you want to mask out any regions before fitting? (y/n): ")
-        if user_input == 'y':
+        # Ask user for mask region(s) using Qt dialog
+        reply = QtWidgets.QMessageBox.question(
+            self, 'Mask Regions?',
+            'Do you want to mask out any regions before fitting?',
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+        if reply == QtWidgets.QMessageBox.Yes:
             print("Click and press spacebar to define mask region(s), then press enter to finalize.")
             # Store inputs and delay fitting until after masking
             self._bayes_fit_args = (x, y, yerr, poly_order, poly_guess)
@@ -1946,15 +1962,47 @@ class SpectrumPlotter(QtWidgets.QWidget):
             self.prompt_gaussian_selection(x, y, yerr, poly_order, poly_guess)
 
     def prompt_gaussian_selection(self, x, y, yerr, poly_order, poly_guess):
-        user_choice = input("Do you want to enter a manual Gaussian guess? (y/n): ").strip().lower()
-        if user_choice == 'y':
+        reply = QtWidgets.QMessageBox.question(
+            self, 'Manual Gaussian Guess?',
+            'Do you want to enter a manual Gaussian guess?',
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+        if reply == QtWidgets.QMessageBox.Yes:
             while True:
+                # Get mean
+                mean_str, ok = QtWidgets.QInputDialog.getText(
+                    self, 'Gaussian Parameters', 'Enter central wavelength (mean):'
+                )
+                if not ok:
+                    return
                 try:
-                    mean = float(input("Enter central wavelength (mean): "))
-                    sigma = float(input("Enter sigma (stddev): "))
-                    amp = float(input("Enter amplitude: "))
+                    mean = float(mean_str)
                 except ValueError:
-                    print("Invalid input. Try again.")
+                    QtWidgets.QMessageBox.warning(self, 'Error', 'Invalid input. Please enter a number.')
+                    continue
+
+                # Get sigma
+                sigma_str, ok = QtWidgets.QInputDialog.getText(
+                    self, 'Gaussian Parameters', 'Enter sigma (stddev):'
+                )
+                if not ok:
+                    return
+                try:
+                    sigma = float(sigma_str)
+                except ValueError:
+                    QtWidgets.QMessageBox.warning(self, 'Error', 'Invalid input. Please enter a number.')
+                    continue
+
+                # Get amplitude
+                amp_str, ok = QtWidgets.QInputDialog.getText(
+                    self, 'Gaussian Parameters', 'Enter amplitude:'
+                )
+                if not ok:
+                    return
+                try:
+                    amp = float(amp_str)
+                except ValueError:
+                    QtWidgets.QMessageBox.warning(self, 'Error', 'Invalid input. Please enter a number.')
                     continue
 
                 # Plot the manual Gaussian guess
@@ -1974,10 +2022,6 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 else:
                     final_mask = in_bounds
 
-                    left, right = self.bayes_bounds
-                in_bounds = (self.wav > left) & (self.wav < right)
-                final_mask = mask_full & in_bounds
-
                 # Use masked data for plotting
                 x_plot = self.wav[final_mask]
                 gauss_plot = gauss_full[final_mask]
@@ -1990,12 +2034,16 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 self.fig.canvas.draw()
                 plt.pause(0.001)
 
-                confirm = input("Proceed with this manual guess? (y/n, or 'q' to cancel): ").strip().lower()
-                if confirm == 'y':
+                reply = QtWidgets.QMessageBox.question(
+                    self, 'Confirm Gaussian',
+                    'Proceed with this manual guess?',
+                    QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Cancel
+                )
+                if reply == QtWidgets.QMessageBox.Yes:
                     gauss_guess = [amp, mean, sigma]
                     self.run_bayes_fit(x, y, yerr, poly_order, gauss_guess, poly_guess)
                     return
-                elif confirm == 'q':
+                elif reply == QtWidgets.QMessageBox.Cancel:
                     print("Manual input cancelled. Returning to click-based selection.")
                     temp_line.remove()
                     self.fig.canvas.draw()
@@ -2004,10 +2052,9 @@ class SpectrumPlotter(QtWidgets.QWidget):
                     print("Manual guess discarded. Please enter a new guess.")
                     temp_line.remove()
                     self.fig.canvas.draw()
-        elif user_choice == 'n':
-            print("Click on a known Gaussian profile within the bounds to select as an initial guess.")
-        else:
-            raise ValueError("Invalid input. Please enter 'y' or 'n'.")
+        
+        # Click-based selection if no manual guess provided
+        print("Click on a known Gaussian profile within the bounds to select as an initial guess.")
 
         def on_click(event):
             x_pos = event.xdata
