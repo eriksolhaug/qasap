@@ -127,29 +127,36 @@ To run QASAP from anywhere as a simple `qasap` command:
 ## Package Structure
 
 ```
-qasap/
-  ├── __init__.py              # Package initialization
-  ├── qasap.py                 # Main entry point
-  ├── spectrum_io.py           # File I/O with auto-detection
-  ├── spectrum_analysis.py     # Fitting and analysis functions
-  ├── spectrum_plotter.py      # Main visualization widget (~4600 lines)
-  ├── spectrum_plotter_app.py  # Application wrapper
-  ├── ui_components.py         # UI component exports
-  ├── linelist_window.py       # Line identification window
-  ├── linelist_selector_window.py # Line list management UI
-  ├── linelist.py              # Line list data structures
-  ├── listfit_window.py        # Multi-component fitting dialog
-  ├── item_tracker.py          # Component tracking and management
-  ├── format_picker_dialog.py  # Format selection dialog
-  └── resources/
-      ├── linelist/            # Line list catalogs
-      │   ├── emlines.txt
-      │   ├── emlines_osc.txt
-      │   ├── sdss_emission.txt
-      │   ├── sdss_absorption.txt
-      │   └── sdss_sky.txt
-      └── bands/               # Instrument band definitions
-          └── instrument_bands.txt
+.
+├── qasap.py                 # Main entry point (root level)
+├── setup.py                 # Package setup and installation
+├── requirements.txt         # Python dependencies
+├── LICENSE
+├── README.md
+├── __init__.py              # Package initialization
+├── qasap/                   # Main package directory
+│   ├── __init__.py
+│   ├── spectrum_io.py           # File I/O with auto-detection
+│   ├── spectrum_analysis.py     # Fitting and analysis functions
+│   ├── spectrum_plotter.py      # Main visualization widget
+│   ├── spectrum_plotter_app.py  # Application wrapper
+│   ├── ui_components.py         # UI component exports
+│   ├── linelist_window.py       # Line identification window
+│   ├── linelist_selector_window.py # Line list management UI
+│   ├── linelist.py              # Line list data structures
+│   ├── listfit_window.py        # Multi-component fitting dialog
+│   ├── item_tracker.py          # Component tracking and management
+│   └── format_picker_dialog.py  # Format selection dialog
+└── resources/
+    ├── linelist/                # Line list catalogs
+    │   ├── emlines.txt
+    │   ├── emlines_osc.txt
+    │   ├── sdss.txt
+    │   ├── sdss_emission.txt
+    │   ├── sdss_absorption.txt
+    │   └── sdss_sky.txt
+    └── bands/                   # Instrument band definitions
+        └── instrument_bands.txt
 ```
 
 ## Data Files
