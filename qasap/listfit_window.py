@@ -4,6 +4,7 @@ ListfitWindow - Multi-component spectrum fitting dialog
 
 from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtGui import QIntValidator
 import numpy as np
 from scipy.optimize import curve_fit
 
@@ -75,7 +76,7 @@ class ListfitWindow(QtWidgets.QWidget):
         self.poly_order_label = QtWidgets.QLabel("Order:")
         self.poly_order_input = QtWidgets.QLineEdit("1")
         self.poly_order_input.setMaximumWidth(80)
-        self.poly_order_input.setValidator(QtWidgets.QIntValidator(0, 10))
+        self.poly_order_input.setValidator(QIntValidator(0, 10))
         poly_order_layout.addWidget(self.poly_order_label)
         poly_order_layout.addWidget(self.poly_order_input)
         poly_order_layout.addStretch()
