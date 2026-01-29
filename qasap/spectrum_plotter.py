@@ -4346,7 +4346,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
         
         # Plot total fit
         y_total = result.best_fit
-        self.ax.plot(x_fit, y_total, color='green', linestyle='-', linewidth=2.5, label='Total Fit', zorder=10)
+        self.ax.plot(x_fit, y_total, color='darkblue', linestyle='-', linewidth=1.5, label='Total Fit', zorder=10)
         
         self.ax.legend()
 
