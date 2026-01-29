@@ -470,8 +470,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
 
     def read_lines(self):
         # Read spectral lines from file
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        line_file = os.path.join(script_dir, 'emlines.txt')
+        line_file = os.path.join(self.resources_dir, 'linelist', 'emlines.txt')
         line_ids = []
         line_wavelengths = []
         with open(line_file, 'r') as file:
@@ -489,8 +488,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
     
     def read_osc(self):
         # Read spectral lines from file
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        line_file = os.path.join(script_dir, 'emlines_osc.txt')
+        line_file = os.path.join(self.resources_dir, 'linelist', 'emlines_osc.txt')
         line_ids = []
         line_wavelengths = []
         line_osc = []
@@ -507,8 +505,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
 
     def read_instrument_bands(self):
         # Read instrument bands from file
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        bands_file = os.path.join(script_dir, '..', 'resources', 'bands', 'instrument_bands.txt')
+        bands_file = os.path.join(self.resources_dir, 'bands', 'instrument_bands.txt')
         with open(bands_file, 'r') as file:
             for line in file:
                 parts = line.strip().split(',')
