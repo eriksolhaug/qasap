@@ -19,6 +19,7 @@ from PyQt5 import QtWidgets
 from qasap.spectrum_io import SpectrumIO
 from qasap.spectrum_analysis import SpectrumAnalysis
 from qasap.ui_components import SpectrumPlotter, SpectrumPlotterApp
+from qasap.format_picker_dialog import FormatPickerDialog
 
 
 def main():
@@ -108,20 +109,50 @@ Examples:
     # Load spectrum
     if args.fits_file:
         try:
-            if args.fmt:
-                print(f"Loading with format: {args.fmt}")
-                wav, spec, err, meta = SpectrumIO.read_spectrum(args.fits_file, fmt=args.fmt)
+            # Initialize PyQt5 application first (needed for dialogs)
+            if not QtWidgets.QApplication.instance():
+                app = QtWidgets.QApplication(sys.argv)
             else:
-                # Auto-detect
+                app = QtWidgets.QApplication.instance()
+            
+            # Determine format and options
+            if args.fmt:
+                fmt = args.fmt
+                options = {}
+                print(f"Using forced format: {fmt}")
+            else:
+                # Auto-detect and show picker dialog
                 candidates = SpectrumIO.detect_spectrum_format(args.fits_file)
-                if candidates:
-                    candidates.sort(key=lambda c: c["score"], reverse=True)
-                    best = candidates[0]
-                    print(f"Auto-detected: {best['key']} (confidence: {best['score']}/100)")
-                    wav, spec, err, meta = SpectrumIO.read_spectrum(args.fits_file, fmt=best['key'])
-                else:
+                if not candidates:
                     print("Error: Could not auto-detect format")
                     sys.exit(1)
+                
+                # If multiple candidates, show dialog; if only one, use it
+                if len(candidates) > 1:
+                    print(f"Detected {len(candidates)} possible formats. Showing selection dialog...")
+                    dialog = FormatPickerDialog(args.fits_file, candidates)
+                    result = dialog.exec_()
+                    
+                    if result != QtWidgets.QDialog.Accepted:
+                        print("Format selection cancelled")
+                        sys.exit(0)
+                    
+                    selection = dialog.get_selection()
+                    if not selection:
+                        print("No format selected")
+                        sys.exit(0)
+                    
+                    fmt, options = selection
+                    print(f"Selected format: {fmt}")
+                else:
+                    # Only one candidate - use it without dialog
+                    best = candidates[0]
+                    fmt = best["key"]
+                    options = best.get("options", {})
+                    print(f"Auto-detected: {fmt} (confidence: {best['score']}/100)")
+            
+            # Load the spectrum with selected format
+            wav, spec, err, meta = SpectrumIO.read_spectrum(args.fits_file, fmt=fmt, options=options)
             
             print(f"Loaded {len(wav)} wavelength points")
             print(f"Wavelength: {wav[0]:.2f} - {wav[-1]:.2f} Å")
@@ -146,12 +177,6 @@ Examples:
                 print(f"Shifted to rest-frame (z={z}): {wav_rest[0]:.2f} - {wav_rest[-1]:.2f} Å")
                 wav = wav_rest
             
-            # Initialize PyQt5 application
-            if not QtWidgets.QApplication.instance():
-                app = QtWidgets.QApplication(sys.argv)
-            else:
-                app = QtWidgets.QApplication.instance()
-            
             # Launch interactive GUI plotter
             print("\nLaunching interactive plotter...\n")
             
@@ -165,7 +190,7 @@ Examples:
                 'fits:table:columns': 9,
                 'fits:ext:spectrum': 7,
             }
-            file_flag = file_flag_map.get(best['key'], 0) if 'best' in locals() else 0
+            file_flag = file_flag_map.get(fmt, 0)
             
             plotter = SpectrumPlotter(
                 fits_file=args.fits_file,
