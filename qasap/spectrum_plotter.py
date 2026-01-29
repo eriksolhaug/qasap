@@ -3954,6 +3954,33 @@ class SpectrumPlotter(QtWidgets.QWidget):
                     self.update_marker_and_label_positions()
                 plt.draw()
 
+        # Enter Bayes fit mode with ':' key
+        if event.key == ':':
+            if self.bayes_mode:
+                self.bayes_mode = False
+                print("Exiting Bayes fit mode.")
+            else:
+                self.bayes_mode = True
+                self.bayes_bounds = []  # Reset bounds
+                if self.bayes_bound_lines is not None:
+                    for line in self.bayes_bound_lines:  # Remove any existing bound lines
+                        line.remove()
+                self.bayes_bound_lines.clear()  # Clear the list of bound lines
+                print("Bayes fit mode: Press space to set left and right bounds.")
+                plt.draw()
+
+        # Select bounds to perform Bayes fit
+        elif event.key == ' ' and self.bayes_mode:
+            if len(self.bayes_bounds) < 2:
+                self.bayes_bounds.append(event.xdata)
+                line = self.ax.axvline(event.xdata, color='lightblue', linestyle='--')
+                self.bayes_bound_lines.append(line)
+                self.fig.canvas.draw_idle()
+                if len(self.bayes_bounds) == 2:
+                    self.bayes_bounds.sort()
+                    print(f"Bayes fit bounds set: {self.bayes_bounds}")
+                    self.prompt_bayes_fit()
+
         # Save Gaussian fits
         elif event.key == 'a':
             if self.gaussian_fits:
