@@ -166,7 +166,9 @@ Examples:
                 alfosc_output=args.output or "",
                 lsf=args.lsf or "10"
             )
+            # Show control panel and create the spectrum plot
             plotter.show()
+            plotter.plot_spectrum()  # Create and show the plotting window
             sys.exit(app.exec_())
             
         except Exception as e:
