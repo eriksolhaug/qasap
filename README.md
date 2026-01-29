@@ -1,6 +1,13 @@
 # QASAP — Quick Analysis of Spectra and Profiles
 ## Version 0.8
 
+[![PyQt5](https://img.shields.io/badge/PyQt5-5.15+-blue.svg)](https://www.riverbankcomputing.com/software/pyqt/intro)
+[![scipy](https://img.shields.io/badge/scipy-1.5+-brightgreen.svg)](https://scipy.org/)
+[![matplotlib](https://img.shields.io/badge/matplotlib-3.1+-orange.svg)](https://matplotlib.org/)
+[![astropy](https://img.shields.io/badge/astropy-4.0+-red.svg)](https://www.astropy.org/)
+[![lmfit](https://img.shields.io/badge/lmfit-0.9+-purple.svg)](https://lmfit.github.io/lmfit-py/)
+[![emcee](https://img.shields.io/badge/emcee-3.0+-yellowgreen.svg)](https://emcee.readthedocs.io/)
+
 Interactive Python tool for comprehensive 1D spectral analysis with intelligent file format detection. QASAP provides both quick-look functionality and advanced analysis features including multi-component line fitting, continuum modeling, and Bayesian MCMC fitting.
 
 ## Features
