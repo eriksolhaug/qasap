@@ -170,7 +170,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
         self.redshift_selected_line = None  # Track the line object selected for redshift
         
         # Line List Selector
-        resources_dir = os.path.join(os.path.dirname(__file__), '..', 'resources', 'linelist')
+        resources_dir = os.path.join(os.path.dirname(__file__), '..', 'resources')
         self.line_list_selector = None  # Will be created on demand
         self.resources_dir = resources_dir
         self.active_line_lists = []  # {linelist: LineList, color: str}
