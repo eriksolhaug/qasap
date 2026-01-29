@@ -1,4 +1,4 @@
-# QASAP — Quick & Advanced Spectrum Analysis Package
+# QASAP — Quick Analysis of Spectra and Profiles Package
 ## Version 0.7
 
 Interactive Python tool for comprehensive 1D spectral analysis with intelligent file format detection. QASAP provides both quick-look functionality and advanced analysis features including multi-component line fitting, continuum modeling, and Bayesian MCMC fitting.
@@ -9,7 +9,7 @@ Interactive Python tool for comprehensive 1D spectral analysis with intelligent 
 - **Interactive Plotting**: Real-time spectrum visualization with zoom, pan, and smooth controls
 - **Profile Fitting**: Gaussian and Voigt profile fitting (single and multi-component)
 - **Line Analysis**: Equivalent width, redshift estimation, velocity mode analysis
-- **Advanced Fitting**: Bayesian MCMC with posterior distributions
+- **Advanced Fitting**: Bayesian MCMC with posterior distributions (work in progress still - works well for single profiles)
 - **Utilities**: LSF convolution, line identification, filter overlays
 
 ## Installation
@@ -104,9 +104,6 @@ qasap.py                   # Main entry point (v0.6)
 - `emlines_osc.txt`: Lines with oscillator strengths
 - `instrument_bands.txt`: Filter definitions
 
-## Interactive Controls
-
-See `qasap_v0.5/README.md` for comprehensive keyboard shortcut documentation.
 
 ## User Interface Windows
 
@@ -121,7 +118,8 @@ The central interactive spectrum visualization with the following controls:
 - Redshift tracking with selected line highlighting
 
 **Keyboard Shortcuts:**
-- `z`: Enter redshift mode (select emission line to estimate redshift)
+- `e`: Toggle emission line display
+- `z`: Enter redshift mode (select already fitted emission line to estimate redshift)
 - `g`: Single Gaussian fitting mode
 - `v`: Single Voigt profile fitting mode
 - `h`: Listfit mode (multi-component simultaneous fitting)
@@ -144,15 +142,14 @@ Displays real-time analysis information and fitting parameters:
 
 **Sections:**
 - **Quick Stats**: Line center, FWHM, equivalent width, signal-to-noise
-- **Redshift**: Current redshift and estimated error
-- **Component Info**: Details of currently selected Gaussian/Voigt (amplitude, mean, sigma/width)
-- **Fit Quality**: Reduced χ², Bayesian Information Criterion
+- **Redshift**: Set redshift for displayed emission lines (toggled with key `e`)
+- **Polynomial Order**: Set the order for the polynomial for Continuum mode (with key `m`)
 
 ### 3. Linelist Window
 Database browser for emission and absorption lines:
 
 **Features:**
-- Searchable catalog of common emission lines (Hα, Hβ, [OIII], [OII], Lyα, etc.)
+- Searchable catalog of common emission lines (H-alpha, H-beta, [OIII], [OII], Ly-alpha, etc.)
 - Rest wavelength reference
 - Line identification at current redshift
 - Click to jump to line in spectrum
@@ -208,7 +205,7 @@ Centralized feature management panel accessed with `*` key:
 ## Citation
 
 ```
-Solhaug, E. (2025). QASAP v0.7: Quick & Advanced Spectrum Analysis Package.
+Solhaug, E. (2025). QASAP: Quick Analysis of Spectra and Profiles.
 https://github.com/eriksolhaug/qasap
 ```
 
