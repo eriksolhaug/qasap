@@ -4192,6 +4192,9 @@ class SpectrumPlotter(QtWidgets.QWidget):
     def build_composite_model(self, components, x_fit, y_fit, err_fit):
         """Build a composite lmfit Model from component list"""
         model = None
+        gauss_count = 0
+        voigt_count = 0
+        poly_count = 0
         
         for comp in components:
             if comp['type'] == 'gaussian':
@@ -4204,15 +4207,17 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 center_guess = peak_x
                 sigma_guess = (x_fit[-1] - x_fit[0]) / 10.0
                 
-                gauss_model = Model(self.gaussian, prefix='g_', independent_vars=['x'])
-                gauss_model.set_param_hint('g_amp', value=amp_guess)
-                gauss_model.set_param_hint('g_mean', value=center_guess)
-                gauss_model.set_param_hint('g_stddev', value=sigma_guess, min=1e-6)
+                prefix = f'g{gauss_count}_'
+                gauss_model = Model(self.gaussian, prefix=prefix, independent_vars=['x'])
+                gauss_model.set_param_hint(f'{prefix}amp', value=amp_guess)
+                gauss_model.set_param_hint(f'{prefix}mean', value=center_guess)
+                gauss_model.set_param_hint(f'{prefix}stddev', value=sigma_guess, min=1e-6)
                 
                 if model is None:
                     model = gauss_model
                 else:
                     model = model + gauss_model
+                gauss_count += 1
             
             elif comp['type'] == 'voigt':
                 # Find reasonable initial guess
@@ -4225,31 +4230,39 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 sigma_guess = (x_fit[-1] - x_fit[0]) / 10.0
                 gamma_guess = sigma_guess / 2.0
                 
-                voigt_model = Model(self.voigt, prefix='v_', independent_vars=['x'])
-                voigt_model.set_param_hint('v_amp', value=amp_guess)
-                voigt_model.set_param_hint('v_center', value=center_guess)
-                voigt_model.set_param_hint('v_sigma', value=sigma_guess, min=1e-6)
-                voigt_model.set_param_hint('v_gamma', value=gamma_guess, min=1e-6)
+                prefix = f'v{voigt_count}_'
+                voigt_model = Model(self.voigt, prefix=prefix, independent_vars=['x'])
+                voigt_model.set_param_hint(f'{prefix}amp', value=amp_guess)
+                voigt_model.set_param_hint(f'{prefix}center', value=center_guess)
+                prefix = f'v{voigt_count}_'
+                voigt_model = Model(self.voigt, prefix=prefix, independent_vars=['x'])
+                voigt_model.set_param_hint(f'{prefix}amp', value=amp_guess)
+                voigt_model.set_param_hint(f'{prefix}center', value=center_guess)
+                voigt_model.set_param_hint(f'{prefix}sigma', value=sigma_guess, min=1e-6)
+                voigt_model.set_param_hint(f'{prefix}gamma', value=gamma_guess, min=1e-6)
                 
                 if model is None:
                     model = voigt_model
                 else:
                     model = model + voigt_model
+                voigt_count += 1
             
             elif comp['type'] == 'polynomial':
                 order = comp.get('order', 1)
+                prefix = f'p{poly_count}_'
                 # Create polynomial model
                 coeffs = np.polyfit(x_fit, y_fit, order)
-                poly_model = Model(lambda x, **params: np.polyval([params.get(f'c{i}', coeffs[i]) for i in range(order+1)], x), 
-                                   prefix='p_', independent_vars=['x'])
+                poly_model = Model(lambda x, **params: np.polyval([params.get(f'{prefix}c{i}', coeffs[i]) for i in range(order+1)], x), 
+                                   prefix=prefix, independent_vars=['x'])
                 
                 for i in range(order + 1):
-                    poly_model.set_param_hint(f'p_c{i}', value=coeffs[i])
+                    poly_model.set_param_hint(f'{prefix}c{i}', value=coeffs[i])
                 
                 if model is None:
                     model = poly_model
                 else:
                     model = model + poly_model
+                poly_count += 1
         
         return model
 
