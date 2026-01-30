@@ -185,6 +185,8 @@ class HelpWindow(QtWidgets.QDialog):
 
 ## Item Management
 - **j** - Toggle Item Tracker window
+
+## Help
 - **?** - Show this help window
 
 ## File Storage
