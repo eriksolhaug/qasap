@@ -4582,6 +4582,11 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 g_mean = params[f'{prefix}mean'].value
                 g_stddev = params[f'{prefix}stddev'].value
                 
+                # Extract errors from lmfit results
+                g_amp_err = params[f'{prefix}amp'].stderr if params[f'{prefix}amp'].stderr is not None else 0.0
+                g_mean_err = params[f'{prefix}mean'].stderr if params[f'{prefix}mean'].stderr is not None else 0.0
+                g_stddev_err = params[f'{prefix}stddev'].stderr if params[f'{prefix}stddev'].stderr is not None else 0.0
+                
                 y_component = self.gaussian(x_smooth, g_amp, g_mean, g_stddev)
                 line, = self.ax.plot(x_smooth, y_component, color=color, linestyle='--', linewidth=2)
                 
@@ -4590,9 +4595,9 @@ class SpectrumPlotter(QtWidgets.QWidget):
                     'fit_id': self.fit_id,
                     'is_velocity_mode': self.is_velocity_mode,
                     'component_id': self.component_id,
-                    'amp': g_amp, 'amp_err': 0.0,
-                    'mean': g_mean, 'mean_err': 0.0,
-                    'stddev': g_stddev, 'stddev_err': 0.0,
+                    'amp': g_amp, 'amp_err': g_amp_err,
+                    'mean': g_mean, 'mean_err': g_mean_err,
+                    'stddev': g_stddev, 'stddev_err': g_stddev_err,
                     'bounds': (left_bound, right_bound),
                     'line_id': None,
                     'line_wavelength': None,
@@ -4616,6 +4621,12 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 v_sigma = params[f'{prefix}sigma'].value
                 v_gamma = params[f'{prefix}gamma'].value
                 
+                # Extract errors from lmfit results
+                v_amp_err = params[f'{prefix}amp'].stderr if params[f'{prefix}amp'].stderr is not None else 0.0
+                v_center_err = params[f'{prefix}center'].stderr if params[f'{prefix}center'].stderr is not None else 0.0
+                v_sigma_err = params[f'{prefix}sigma'].stderr if params[f'{prefix}sigma'].stderr is not None else 0.0
+                v_gamma_err = params[f'{prefix}gamma'].stderr if params[f'{prefix}gamma'].stderr is not None else 0.0
+                
                 y_component = self.voigt(x_smooth, v_amp, v_center, v_sigma, v_gamma)
                 line, = self.ax.plot(x_smooth, y_component, color=color, linestyle='--', linewidth=2)
                 
@@ -4624,10 +4635,10 @@ class SpectrumPlotter(QtWidgets.QWidget):
                     'fit_id': self.fit_id,
                     'is_velocity_mode': self.is_velocity_mode,
                     'component_id': self.component_id,
-                    'amp': v_amp, 'amp_err': 0.0,
-                    'center': v_center, 'center_err': 0.0,
-                    'sigma': v_sigma, 'sigma_err': 0.0,
-                    'gamma': v_gamma, 'gamma_err': 0.0,
+                    'amp': v_amp, 'amp_err': v_amp_err,
+                    'center': v_center, 'center_err': v_center_err,
+                    'sigma': v_sigma, 'sigma_err': v_sigma_err,
+                    'gamma': v_gamma, 'gamma_err': v_gamma_err,
                     'bounds': (left_bound, right_bound),
                     'line_id': None,
                     'line_wavelength': None,
