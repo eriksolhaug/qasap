@@ -289,7 +289,8 @@ QASAP employs different fitting algorithms optimized for each analysis task:
 
 - **MCMC Mode (`:`)**: Uses `emcee` for Bayesian posterior sampling (currently in development). Provides posterior distributions and uncertainty quantification beyond frequentist approach. (Currently only works for a single line first estimated using Single Mode)
 
-### 2. Control Panel (Sidebar)
+
+### 2. Control Panel
 Displays real-time analysis information and fitting parameters:
 
 **Sections:**
@@ -315,7 +316,7 @@ Interactive line identification and management interface for viewing and selecti
 **Interface:**
 The LineList Window uses a dual-panel design:
 
-**Left Panel - Line List Selection:**
+**Left Panl - Line List Selection:**
 - Displays all available line list catalogs with line counts
 - Format: `{ListName} ({count} lines)`
 - Scrollable
@@ -350,7 +351,7 @@ Dialog for simultaneous fitting of multiple spectral components:
 4. Choose component types and quantities:
    - **Gaussian**: Simple Gaussian profiles
    - **Voigt**: Gaussian + Lorentzian (more realistic for emission lines)
-   - **Polynomial**: Continuum background (specify order: 1-4)
+   - **Polynomial**: Continuum background (specify order)
 5. Click "Calculate Fit" to perform simultaneous fitting
 6. Fitted components displayed with individual colors:
    - Red: Gaussian components
