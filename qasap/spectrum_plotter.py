@@ -2989,6 +2989,9 @@ class SpectrumPlotter(QtWidgets.QWidget):
                     # Register with ItemTracker
                     bounds_str = f"λ: {min(self.x_data):.2f}-{max(self.x_data):.2f} Å"
                     self.register_item('continuum', 'Continuum (auto)', fit_dict=continuum_fit, position=bounds_str, color='magenta')
+                    # Update residual display if shown
+                    if self.is_residual_shown:
+                        self.calculate_and_plot_residuals()
                     overall_continuum = overall_continuum[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
                     continuum_subtracted_y = comp_y - overall_continuum
                     print("No existing continuum found; fitted new continuum.")
@@ -3139,6 +3142,9 @@ class SpectrumPlotter(QtWidgets.QWidget):
                     # Register with ItemTracker
                     bounds_str = f"λ: {min(self.x_data):.2f}-{max(self.x_data):.2f} Å"
                     self.register_item('continuum', 'Continuum (auto)', fit_dict=continuum_fit, position=bounds_str, color='magenta')
+                    # Update residual display if shown
+                    if self.is_residual_shown:
+                        self.calculate_and_plot_residuals()
                     overall_continuum = overall_continuum[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
                     continuum_subtracted_y = comp_y - overall_continuum
                     continuum_ys.append(np.array(overall_continuum))
@@ -4188,6 +4194,11 @@ class SpectrumPlotter(QtWidgets.QWidget):
                     if self.ew_fill:
                         self.ew_fill.remove()
                         self.ew_fill = None  # Reset the fill reference
+                    # Find and unregister the item from Item Tracker
+                    for item_id, item_info in list(self.item_id_map.items()):
+                        if item_info.get('fit_dict') is fit:
+                            self.unregister_item(item_id)
+                            break
                     self.gaussian_fits.remove(fit)
                     print(f"Removed Gaussian fit within bounds ({left_bound}, {right_bound})")
                     plt.draw()
@@ -4203,6 +4214,11 @@ class SpectrumPlotter(QtWidgets.QWidget):
                     if self.ew_fill:
                         self.ew_fill.remove()
                         self.ew_fill = None  # Reset the fill reference
+                    # Find and unregister the item from Item Tracker
+                    for item_id, item_info in list(self.item_id_map.items()):
+                        if item_info.get('fit_dict') is fit:
+                            self.unregister_item(item_id)
+                            break
                     self.voigt_fits.remove(fit)
                     print(f"Removed Voigt fit within bounds ({left_bound}, {right_bound})")
                     plt.draw()
