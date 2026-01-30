@@ -1534,8 +1534,9 @@ class SpectrumPlotter(QtWidgets.QWidget):
         # Clear previous lines
         self.clear_linelist()
         
-        # Get current x-limits of the plot
-        xlim = self.ax.get_xlim()
+        # Use the stored bounds instead of getting them from the axis
+        # This ensures we use the correct bounds even if they haven't been applied to the canvas yet
+        xlim = (self.x_lower_bound, self.x_upper_bound)
         
         # Display each active line list
         for linelist_info in self.active_line_lists:
