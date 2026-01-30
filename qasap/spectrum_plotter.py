@@ -743,9 +743,17 @@ class SpectrumPlotter(QtWidgets.QWidget):
 
     def calculate_and_plot_residuals(self):
         self.residuals = self.calculate_residuals()  # Custom function to calculate residuals
+        # Clear previous lines before plotting new ones
+        self.residual_ax.clear()
         # Update plot
         self.residual_line, = self.residual_ax.step(self.x_data, self.residuals, color='royalblue', where='mid')
         self.residual_ax.plot(self.x_data, [0] * len(self.x_data), color='gray', linestyle='--', linewidth=1) # Add horizontal line at y=0
+        # Restore labels after clear
+        if self.is_velocity_mode:
+            self.residual_ax.set_xlabel(r"Velocity (km s$^{-1}$)")
+        else:
+            self.residual_ax.set_xlabel("Wavelength (Å)")
+        self.residual_ax.set_ylabel("Residuals")
         self.update_bounds()
         self.update_residual_ticks()  # Update ticks to look nice
         self.update_residual_ybounds()  # Update y-bounds to look nice
@@ -1664,6 +1672,9 @@ class SpectrumPlotter(QtWidgets.QWidget):
             self.continuum_patches = [p for p in self.continuum_patches if p.get('bounds') != bounds]
         
         plt.draw()
+        # Update residual display if shown
+        if self.is_residual_shown:
+            self.calculate_and_plot_residuals()
         self.unregister_item(item_id)
     
     def on_item_selected_from_tracker(self, item_id):
@@ -4180,6 +4191,9 @@ class SpectrumPlotter(QtWidgets.QWidget):
                     self.gaussian_fits.remove(fit)
                     print(f"Removed Gaussian fit within bounds ({left_bound}, {right_bound})")
                     plt.draw()
+                    # Update residual display if shown
+                    if self.is_residual_shown:
+                        self.calculate_and_plot_residuals()
                     break
             for fit in self.voigt_fits:
                 left_bound, right_bound = fit['bounds']
@@ -4192,6 +4206,9 @@ class SpectrumPlotter(QtWidgets.QWidget):
                     self.voigt_fits.remove(fit)
                     print(f"Removed Voigt fit within bounds ({left_bound}, {right_bound})")
                     plt.draw()
+                    # Update residual display if shown
+                    if self.is_residual_shown:
+                        self.calculate_and_plot_residuals()
                     break
 
         # Enter redshift estimation mode
