@@ -262,6 +262,8 @@ Note: You will need to select the line list and Toggle Display to view lines. Se
 
 **Item Management:**
 - `j` - Toggle Item Tracker window visibility
+
+**Help:**
 - `?` - Show keyboard shortcuts help window
 
 **File Storage:**

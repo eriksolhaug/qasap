@@ -57,6 +57,9 @@ Instrument Filters & Bands:
 Item Management:
   * (asterisk)         - Toggle Item Tracker window visibility
 
+Help:
+  ?                    - Show keyboard shortcuts help window
+
 Display Options (Line Lists):
   Line lists from the selector (e key) automatically display with current pan position
   Redshift adjustments update line displays immediately
