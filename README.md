@@ -44,6 +44,8 @@ cd qasap
 git checkout v0.8
 ```
 
+Then install the required packages (regardless of version):
+
 ```bash
 cd qasap
 pip install -r requirements.txt
