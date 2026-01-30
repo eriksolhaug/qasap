@@ -156,12 +156,12 @@ class HelpWindow(QtWidgets.QDialog):
 - **|** (pipe) - Enter Multi-Gaussian fit mode (define bounds with SPACE and ENTER)
 - **n** - Single mode Voigt profile fitting
 - **H** - Enter Listfit window for composite fitting
+- **r** - Toggle residual panel
 
 ## Line List
 - **e** - Open Line List window
 
-## Measurement & Analysis
-- **r** - Toggle residual panel
+## Line Profiles
 - **w** - Remove fitted profile under cursor
 - **,** (comma) - Add a line tag to fitted profile under cursor
 - **<** (less than) - Remove tag from fitted profile under cursor
@@ -169,15 +169,11 @@ class HelpWindow(QtWidgets.QDialog):
 - **A** - Save Voigt fit info to file
 - **S** - Save continuum fit info to file
 - **;** (semicolon) - Show/toggle total line for Single Mode fitted lines
-- **v** - Calculate equivalent width of fitted line
+- **v** - Calculate equivalent width of fitted line. In progress. Use with caution.
 
 ## Redshift & Velocity
-- **z** - Enter redshift mode (select already fitted line under cursor with SPACE)
-- **escape** - Exit redshift mode
-- **SPACE** (in velocity mode) - Toggle between wavelength and velocity space
-- **b** - Activate velocity mode (set rest-frame wavelength)
-- **SPACE** (in mask mode) - Select bounds to mask out regions
-- **RETURN** (in mask mode) - Finish masking
+- **z** - Enter redshift mode (select already fitted line under cursor with SPACE, hit ESC to exit redshift mode)
+- **b** - Activate velocity mode (set rest-frame wavelength). In progress.
 
 ## Instrument Filters & Bands
 - **!** through **)** (Shift+1-0) - Toggle instrument bandpass overlays

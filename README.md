@@ -231,6 +231,7 @@ The central interactive spectrum visualization with the following controls:
 - `|` (pipe) - Enter Multi-Gaussian fit mode (fit multiple Gaussians simultaneously, define bounds with `SPACE` and hit `ENTER` to perform fit)
 - `n` - Single mode Voigt profile fitting
 - `H` - Enter Listfit window (a continuum does not need to have been fitted, escape with `ESC`)
+- `r` - Toggle residual panel
 
 Note for `d`, `|`, and `n`:  A continuum must have already been fitted. Define bounds with `SPACE`.
 
@@ -239,8 +240,7 @@ Note for `d`, `|`, and `n`:  A continuum must have already been fitted. Define b
 
 Note: You will need to select the line list and Toggle Display to view lines. Set the redshift applied to the line list in the Control Panel.
 
-**Measurement & Analysis:**
-- `r` - Toggle residual panel
+**Line Profiles:**
 - `w` - Remove fitted profile under cursor
 - `,` (comma) - Add a line tag to fitted profile under cursor
 - `<` (less than) - Remove tag from fitted profile under cursor
@@ -252,10 +252,7 @@ Note: You will need to select the line list and Toggle Display to view lines. Se
 
 **Redshift & Velocity:**
 - `z` - Enter redshift mode (select already fitted line under cursor with `SPACE`, escape with `ESC`)
-- `SPACE` (in velocity mode) - Toggle between wavelength and velocity space
-- `b` - Activate velocity mode (set rest-frame wavelength) - IN PROGRESS
-- `SPACE` (in mask mode) - Select bounds to mask out regions
-- `RETURN` (in mask mode) - Finish masking
+- `b` - Activate velocity mode (set rest-frame wavelength). In progress.
 
 **Instrument Filters & Bands:**
 - `!` through `)` (Shift+1-0) - Toggle instrument bandpass overlays (press Shift+number)
