@@ -44,14 +44,9 @@ cd qasap
 git checkout v0.8
 ```
 
-Then install the required packages (regardless of version):
-
-```bash
-cd qasap
-pip install -r requirements.txt
-```
-
 ### Conda Environment Setup
+
+Then install the required packages (regardless of version):
 
 ```bash
 # Create a new conda environment
@@ -59,6 +54,9 @@ conda create -n qasap python=3.8
 
 # Activate the environment
 conda activate qasap
+
+# Enter qasap directory
+cd qasap # This is the repo you cloned from github
 
 # Install dependencies
 pip install -r requirements.txt
