@@ -134,7 +134,7 @@ class HelpWindow(QtWidgets.QDialog):
 
 ## Navigation & View Controls
 - **[** / **]** - Pan left/right through spectrum
-- **\\** (backslash) - Reset spectrum view to starting bounds
+- **\\\\** (backslash) - Reset spectrum view to starting bounds
 - **x** - Center on wavelength position under cursor
 - **u** / **i** - Set lower/upper x-bounds (wavelength bounds)
 - **t** / **T** - Zoom in/out horizontally (narrow/widen x-range)
