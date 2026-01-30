@@ -827,7 +827,8 @@ class SpectrumPlotter(QtWidgets.QWidget):
         if self.listfit_fits:
             for listfit in self.listfit_fits:
                 left_bound, right_bound = listfit['bounds']
-                comp_x = self.x_data[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
+                mask = (self.x_data >= left_bound) & (self.x_data <= right_bound)
+                comp_x = self.x_data[mask]
                 components = listfit['components']
                 result = listfit['result']
                 
@@ -841,7 +842,10 @@ class SpectrumPlotter(QtWidgets.QWidget):
                         for i in range(order + 1):
                             coeff_val = result.params[f'{prefix}c{i}'].value
                             poly_coeffs.append(coeff_val)
-                        listfit_poly_sum[(self.x_data >= left_bound) & (self.x_data <= right_bound)] += np.polyval(poly_coeffs, comp_x)
+                        print(f"[DEBUG] Listfit polynomial p{poly_count}_: coeffs={poly_coeffs}, order={order}")
+                        y_poly = np.polyval(poly_coeffs, comp_x)
+                        print(f"[DEBUG] Polynomial values min={y_poly.min()}, max={y_poly.max()}, mean={y_poly.mean()}")
+                        listfit_poly_sum[mask] += y_poly
                         poly_count += 1
 
         # Calculate residual as (spectrum - fitted Gaussians - Voigts - continuum - listfit polynomials)
