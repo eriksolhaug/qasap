@@ -30,6 +30,21 @@ Interactive Python tool for comprehensive 1D spectral analysis with intelligent 
 
 ```bash
 git clone https://github.com/eriksolhaug/qasap.git
+```
+
+To **download a specific tagged version** (e.g., v0.8):
+
+```bash
+# Clone only the tag (shallow clone, fastest)
+git clone --depth 1 --branch v0.8 https://github.com/eriksolhaug/qasap.git
+
+# Or clone the whole repo and checkout the tag
+git clone https://github.com/eriksolhaug/qasap.git
+cd qasap
+git checkout v0.8
+```
+
+```bash
 cd qasap
 pip install -r requirements.txt
 ```
@@ -52,6 +67,7 @@ conda install numpy scipy matplotlib astropy pandas lmfit pyqt emcee corner
 # Run QASAP
 python qasap.py spectrum.fits
 ```
+
 
 ## Usage
 
