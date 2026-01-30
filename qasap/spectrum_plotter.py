@@ -811,8 +811,8 @@ class SpectrumPlotter(QtWidgets.QWidget):
             for continuum_fit in self.continuum_fits:
                 left_bound, right_bound = continuum_fit['bounds']
                 comp_x = self.x_data[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
-                a, b = continuum_fit['a'], continuum_fit['b']
-                continuum_sum[(self.x_data >= left_bound) & (self.x_data <= right_bound)] = self.continuum_model(comp_x, a, b)
+                coeffs = continuum_fit['coeffs']
+                continuum_sum[(self.x_data >= left_bound) & (self.x_data <= right_bound)] = np.polyval(coeffs, comp_x)
 
         # Calculate residual as (spectrum - fitted Gaussians - continuum)
         return self.spec - gaussian_sum - voigt_sum - continuum_sum
