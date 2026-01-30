@@ -3752,7 +3752,8 @@ class SpectrumPlotter(QtWidgets.QWidget):
                     if comp_num == idx+1: # Get results separately for each component
                         name = name[len(prefix):]  # Strip the prefix
                         fit_results[name] = param.value
-                        fit_results[f'{name}_err'] = param.stderr
+                        fit_results[f'{name}_err'] = param.stderr if param.stderr is not None else 0.0
+                        print(f"[DEBUG Listfit] Extracted {name}={param.value}, {name}_err={param.stderr}")
                         if name == 'stddev':
                             b = np.sqrt(2) * param.value
                             m = 4.0359e-23 # g for Mg
