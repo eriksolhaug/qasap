@@ -242,6 +242,8 @@ Note: You will need to select the line list and Toggle Display to view lines. Se
 **Measurement & Analysis:**
 - `r` - Toggle residual panel
 - `w` - Remove fitted profile under cursor
+- `,` (comma) - Add a line tag to fitted profile under cursor
+- `<` (less than) - Remove tag from fitted profile under cursor
 - `a` - Save Gaussian fit info to file
 - `A` - Save Voigt fit info to file
 - `S` - Save continuum fit info to file
@@ -259,7 +261,8 @@ Note: You will need to select the line list and Toggle Display to view lines. Se
 - `-` / `_` / `=` / `+` - Show filter bandpasses (requires downloaded filter files)
 
 **Item Management:**
-- `j` - Toggle Item Tracker window
+- `j` - Toggle Item Tracker window visibility
+- `?` - Show keyboard shortcuts help window
 
 **File Storage:**
 All saved screenshots, redshifts, and profile info are stored in the directory where QASAP was launched from.

@@ -38,8 +38,11 @@ Measurement & Analysis:
   S                    - Save continuum fit info to file
   ;                    - Show/toggle total line for Single Mode fitted lines
   w                    - Remove fitted profile under cursor
+  ,                    - Add a line tag to fitted profile under cursor
+  <                    - Remove tag from fitted profile under cursor
   r                    - Toggle residual panel
   j                    - Toggle Item Tracker window
+  ?                    - Show keyboard shortcuts help window
 
 Redshift & Velocity:
   SPACE (in velocity mode) - Toggle between wavelength and velocity space
@@ -98,6 +101,88 @@ from .listfit_window import ListfitWindow
 from .item_tracker import ItemTracker
 from .linelist import get_available_line_lists
 from .linelist_selector_window import LineListSelector
+
+class HelpWindow(QtWidgets.QDialog):
+    """Help window displaying all keyboard shortcuts."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("QASAP Keyboard Shortcuts Help")
+        self.setGeometry(200, 200, 800, 600)
+        
+        layout = QVBoxLayout()
+        
+        # Create text display
+        text_edit = QtWidgets.QTextEdit()
+        text_edit.setReadOnly(True)
+        text_edit.setMarkdown(self.get_help_text())
+        layout.addWidget(text_edit)
+        
+        # Close button
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(self.close)
+        layout.addWidget(close_button)
+        
+        self.setLayout(layout)
+    
+    def get_help_text(self):
+        return """# QASAP Keyboard Shortcuts
+
+## Navigation & View Controls
+- **[** / **]** - Pan left/right through spectrum
+- **\\** (backslash) - Reset spectrum view to starting bounds
+- **x** - Center on wavelength position under cursor
+- **u** / **i** - Set lower/upper x-bounds (wavelength bounds)
+- **t** / **T** - Zoom in/out horizontally (narrow/widen x-range)
+- **y** / **Y** - Zoom in/out vertically (narrow/widen y-range)
+- **O** / **P** - Set lower/upper y-bounds (flux bounds)
+- **l** - Toggle log y-axis
+- **L** - Toggle log x-axis
+- **f** - Enter fullscreen mode
+
+## Spectrum Processing
+- **1**-**9** - Apply Gaussian smoothing with different kernel sizes
+- **0** - Remove smoothing (restore original spectrum)
+- **~** (tilde) - Toggle between step plot and line plot
+- **`** (backtick) - Save screenshot of plot
+
+## Fitting Modes
+- **m** - Enter continuum fitting mode (define regions with SPACE, then ENTER)
+- **d** - Enter Single Mode Gaussian fit (SPACE to select bounds)
+- **|** (pipe) - Enter Multi-Gaussian fit mode (define bounds with SPACE and ENTER)
+- **n** - Single mode Voigt profile fitting
+- **H** - Enter Listfit window for composite fitting
+
+## Line List
+- **e** - Open Line List window
+
+## Measurement & Analysis
+- **r** - Toggle residual panel
+- **w** - Remove fitted profile under cursor
+- **,** (comma) - Add a line tag to fitted profile under cursor
+- **<** (less than) - Remove tag from fitted profile under cursor
+- **a** - Save Gaussian fit info to file
+- **A** - Save Voigt fit info to file
+- **S** - Save continuum fit info to file
+- **;** (semicolon) - Show/toggle total line for Single Mode fitted lines
+- **v** - Calculate equivalent width of fitted line
+
+## Redshift & Velocity
+- **SPACE** (in velocity mode) - Toggle between wavelength and velocity space
+- **b** - Activate velocity mode (set rest-frame wavelength)
+- **SPACE** (in mask mode) - Select bounds to mask out regions
+- **RETURN** (in mask mode) - Finish masking
+
+## Instrument Filters & Bands
+- **!** through **)** (Shift+1-0) - Toggle instrument bandpass overlays
+- **-** / **_** / **=** / **+** - Show filter bandpasses
+
+## Item Management
+- **j** - Toggle Item Tracker window
+- **?** - Show this help window
+
+## File Storage
+All saved screenshots, redshifts, and profile info are stored in the directory where QASAP was launched from.
+"""
 
 class SpectrumPlotter(QtWidgets.QWidget):
     def __init__(self, fits_file, redshift=0.0, zoom_factor=0.1, file_flag=0, lsf="10",):
@@ -229,6 +314,9 @@ class SpectrumPlotter(QtWidgets.QWidget):
         self.highlighted_item_ids = set()  # Track all currently highlighted items
         self.original_colors = {}  # Store original colors for restoration: {item_id: color}
         self.redshift_selected_line = None  # Track the line object selected for redshift
+        
+        # Help Window
+        self.help_window = None
         
         # Line List Selector
         resources_dir = os.path.join(os.path.dirname(__file__), '..', 'resources')
@@ -2777,6 +2865,14 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 self.item_tracker.hide()
             else:
                 self.show_item_tracker()
+
+        # Show help window with '?' key
+        if event.key == '?':
+            if self.help_window is None:
+                self.help_window = HelpWindow(self)
+            self.help_window.show()
+            self.help_window.raise_()
+            self.help_window.activateWindow()
 
         # Toggle residual panel
         if event.key == 'r':
