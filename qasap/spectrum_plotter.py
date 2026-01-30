@@ -1635,6 +1635,19 @@ class SpectrumPlotter(QtWidgets.QWidget):
         item_info = self.item_id_map[item_id]
         item_type = item_info.get('type')
         
+        # Remove from internal storage lists based on item type
+        fit_dict = item_info.get('fit_dict')
+        if fit_dict:
+            if item_type == 'gaussian':
+                # Remove from gaussian_fits list
+                self.gaussian_fits = [f for f in self.gaussian_fits if f is not fit_dict]
+            elif item_type == 'voigt':
+                # Remove from voigt_fits list
+                self.voigt_fits = [f for f in self.voigt_fits if f is not fit_dict]
+            elif item_type == 'continuum':
+                # Remove from continuum_fits list
+                self.continuum_fits = [f for f in self.continuum_fits if f is not fit_dict]
+        
         # Handle line objects (gaussian, voigt, continuum)
         line_obj = item_info.get('line_obj')
         if line_obj:
