@@ -235,7 +235,7 @@ QASAP employs different fitting algorithms optimized for each analysis task:
 |------|-----|----------------|--------|----------|
 | Single Gaussian (`g`) | `g` + `d` | **scipy.optimize.curve_fit** | Least-squares optimization | Quick individual profile fitting |
 | Single Voigt (`v`) | `v` + `d` | **scipy.optimize.curve_fit** | Least-squares optimization | Quick individual profile fitting with natural broadening |
-| Listfit (`h`) | `h` + spacebar | **lmfit (leastsq)** | Composite Model with simultaneous parameter fitting | Multi-component simultaneous fitting with full covariance estimation |
+| Listfit (`h`) | `h` | **lmfit (leastsq)** | Composite Model with simultaneous parameter fitting | Multi-component simultaneous fitting with full covariance estimation |
 | Bayesian MCMC (`:`) | `:` | **emcee** | Posterior sampling (work in progress) | Posterior probability distributions for parameters |
 
 **Key Differences:**
