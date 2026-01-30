@@ -3952,7 +3952,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
             if self.is_residual_shown:
                 self.update_residual_ticks()
                 self.update_residual_ybounds()
-            if self.linelist_plots:
+            if self.linelist_plots or self.active_line_lists:
                 self.display_linelist()
             if self.markers and self.labels:
                 self.update_marker_and_label_positions()
@@ -3965,7 +3965,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
             if self.is_residual_shown:
                 self.update_residual_ticks()
                 self.update_residual_ybounds()
-            if self.linelist_plots:
+            if self.linelist_plots or self.active_line_lists:
                 self.display_linelist()
             if self.markers and self.labels:
                 self.update_marker_and_label_positions()
@@ -3978,7 +3978,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
             if self.is_residual_shown:
                 self.update_residual_ticks()
                 self.update_residual_ybounds()
-            if self.linelist_plots:
+            if self.linelist_plots or self.active_line_lists:
                 self.display_linelist()
             if self.markers and self.labels:
                 self.update_marker_and_label_positions()
@@ -3991,7 +3991,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
             if self.is_residual_shown:
                 self.update_residual_ticks()
                 self.update_residual_ybounds()
-            if self.linelist_plots:
+            if self.linelist_plots or self.active_line_lists:
                 self.display_linelist()
             if self.markers and self.labels:
                 self.update_marker_and_label_positions()
@@ -4004,7 +4004,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
             if self.is_residual_shown:
                 self.update_residual_ticks()
                 self.update_residual_ybounds()
-            if self.linelist_plots:
+            if self.linelist_plots or self.active_line_lists:
                 self.display_linelist()
             if self.markers and self.labels:
                 self.update_marker_and_label_positions()
@@ -4017,7 +4017,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
             if self.is_residual_shown:
                 self.update_residual_ticks()
                 self.update_residual_ybounds()
-            if self.linelist_plots:
+            if self.linelist_plots or self.active_line_lists:
                 self.display_linelist()
             if self.markers and self.labels:
                 self.update_marker_and_label_positions()
@@ -4030,7 +4030,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
             if self.is_residual_shown:
                 self.update_residual_ticks()
                 self.update_residual_ybounds()
-            if self.linelist_plots:
+            if self.linelist_plots or self.active_line_lists:
                 self.display_linelist()
             if self.markers and self.labels:
                 self.update_marker_and_label_positions()
@@ -4041,7 +4041,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
             if self.is_residual_shown:
                 self.update_residual_ticks()
                 self.update_residual_ybounds()
-            if self.linelist_plots:
+            if self.linelist_plots or self.active_line_lists:
                 self.display_linelist()
             if self.markers and self.labels:
                 self.update_marker_and_label_positions()
@@ -4052,7 +4052,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
             if self.is_residual_shown:
                 self.update_residual_ticks()
                 self.update_residual_ybounds()
-            if self.linelist_plots:
+            if self.linelist_plots or self.active_line_lists:
                 self.display_linelist()
             if self.markers and self.labels:
                 self.update_marker_and_label_positions()
@@ -4063,7 +4063,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
             if self.is_residual_shown:
                 self.update_residual_ticks()
                 self.update_residual_ybounds()
-            if self.linelist_plots:
+            if self.linelist_plots or self.active_line_lists:
                 self.display_linelist()
             if self.markers and self.labels:
                 self.update_marker_and_label_positions()
@@ -4074,7 +4074,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
             if self.is_residual_shown:
                 self.update_residual_ticks()
                 self.update_residual_ybounds()
-            if self.linelist_plots:
+            if self.linelist_plots or self.active_line_lists:
                 self.display_linelist()
             if self.markers and self.labels:
                 self.update_marker_and_label_positions()
