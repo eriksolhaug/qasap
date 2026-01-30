@@ -72,8 +72,8 @@ python qasap.py spectrum.fits --fmt fits:image1d
 
 | Format | Description |
 |--------|-------------|
-| `ascii:2col` | 2-column ASCII (wavelength, flux) |
-| `ascii:3col` | 3-column ASCII (wavelength, flux, error) |
+| `ascii:2col` | 2-column ASCII (wavelength, flux/transmission with optional # comments) |
+| `ascii:3col` | 3-column ASCII (wavelength, flux, error with optional # comments) |
 | `ascii:flex` | Flexible ASCII with custom column mapping |
 | `fits:image1d` | 1D FITS image with wavelength in header |
 | `fits:table:vector` | FITS table with wave/flux as vector arrays in rows |
