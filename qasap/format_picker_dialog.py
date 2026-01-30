@@ -129,7 +129,20 @@ class FormatPickerDialog(QtWidgets.QDialog):
         self.col_err.setPlaceholderText("blank for none")
         ascii_layout.addWidget(self.col_err, 4, 1)
         
-        ascii_layout.addItem(QtWidgets.QSpacerItem(0, 0), 5, 0, 1, 3)
+        # Wavelength unit conversion
+        ascii_layout.addWidget(QtWidgets.QLabel("Wave unit (Å conversion):"), 5, 0)
+        self.wave_unit = QtWidgets.QDoubleSpinBox()
+        self.wave_unit.setValue(1.0)
+        self.wave_unit.setDecimals(0)
+        self.wave_unit.setMinimum(0.001)
+        self.wave_unit.setMaximum(1e8)
+        self.wave_unit.setMaximumWidth(100)
+        ascii_layout.addWidget(self.wave_unit, 5, 1)
+        unit_help = QtWidgets.QLabel("<small>1=Å (default), 10=nm, 10000=μm</small>")
+        unit_help.setStyleSheet("color: gray; font-size: 9px;")
+        ascii_layout.addWidget(unit_help, 5, 2)
+        
+        ascii_layout.addItem(QtWidgets.QSpacerItem(0, 0), 6, 0, 1, 3)
         ascii_group.setLayout(ascii_layout)
         layout.addWidget(ascii_group, 0)
         
@@ -262,13 +275,15 @@ class FormatPickerDialog(QtWidgets.QDialog):
                 flux_col = self.col_flux.value()
                 err_str = self.col_err.text().strip()
                 err_col = int(err_str) if err_str else None
+                wave_unit = self.wave_unit.value()
             except ValueError:
                 QtWidgets.QMessageBox.warning(self, "Error", "Columns must be integers (err can be blank)")
                 return
             
             options.update({
                 "delimiter": delim,
-                "colmap": {"wave": wave_col, "flux": flux_col, "err": err_col}
+                "colmap": {"wave": wave_col, "flux": flux_col, "err": err_col},
+                "wave_unit": wave_unit
             })
             # Force flexible reader if user edited mapping
             fmt = "ascii:flex"

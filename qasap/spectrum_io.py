@@ -148,17 +148,20 @@ class SpectrumIO:
         if fmt == "ascii:2col":
             return SpectrumIO._read_ascii(filepath, delimiter=options.get("delimiter"),
                                          colmap={"wave": 0, "flux": 1, "err": None},
-                                         units=options.get("units"))
+                                         units=options.get("units"),
+                                         wave_unit=options.get("wave_unit", 1.0))
         
         elif fmt == "ascii:3col":
             return SpectrumIO._read_ascii(filepath, delimiter=options.get("delimiter"),
                                          colmap={"wave": 0, "flux": 1, "err": 2},
-                                         units=options.get("units"))
+                                         units=options.get("units"),
+                                         wave_unit=options.get("wave_unit", 1.0))
         
         elif fmt == "ascii:flex":
             cm = options.get("colmap", {"wave": 0, "flux": 1, "err": None})
             return SpectrumIO._read_ascii(filepath, delimiter=options.get("delimiter"),
-                                         colmap=cm, units=options.get("units"))
+                                         colmap=cm, units=options.get("units"),
+                                         wave_unit=options.get("wave_unit", 1.0))
         
         elif fmt == "fits:image1d":
             return SpectrumIO._read_fits_image1d(filepath, hdu=options.get("hdu", 0))
@@ -224,8 +227,17 @@ class SpectrumIO:
     @staticmethod
     def _read_ascii(path: Path, delimiter: Optional[str],
                    colmap: Dict[str, Optional[int]],
-                   units: Optional[str] = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Dict]:
-        """Generic ASCII reader (2 or 3 columns typical)."""
+                   units: Optional[str] = None,
+                   wave_unit: float = 1.0) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Dict]:
+        """Generic ASCII reader (2 or 3 columns typical).
+        
+        Parameters
+        ----------
+        wave_unit : float
+            Wavelength unit conversion factor relative to Angstroms.
+            Default 1.0 (wavelength already in Angstroms).
+            Examples: 10 for nm, 10000 for microns
+        """
         data = np.genfromtxt(path, comments="#", delimiter=delimiter)
         if data.ndim == 1:
             data = data[None, :]
@@ -245,7 +257,11 @@ class SpectrumIO:
         if wav is None or flux is None:
             raise ValueError("ASCII reader requires at least wave & flux columns.")
         
-        # Unit conversion for wavelength
+        # Apply wavelength unit conversion
+        if wave_unit != 1.0:
+            wav = wav * wave_unit
+        
+        # Legacy unit string conversion (backward compatibility)
         if units:
             u = str(units).lower()
             if u in ("nm", "nanometer", "nanometers"):
@@ -257,7 +273,7 @@ class SpectrumIO:
             err = np.asarray(err)
         # else: err stays None - no automatic error creation
         
-        wave_unit = {"a": "Å", "angstrom": "Å", "nm": "nm", "um": "µm", "μm": "µm"}.get(
+        wave_unit_str = {"a": "Å", "angstrom": "Å", "nm": "nm", "um": "µm", "μm": "µm"}.get(
             (str(units).lower() if units else "a"), "Å")
         
         meta = {
@@ -266,7 +282,7 @@ class SpectrumIO:
             "delimiter": delimiter,
             "colmap": colmap,
             "units": units,
-            "wave_unit": wave_unit,
+            "wave_unit": wave_unit_str,
             "flux_unit": "adu",
             "ncol": ncol,
         }
