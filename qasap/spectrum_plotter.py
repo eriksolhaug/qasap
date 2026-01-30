@@ -24,6 +24,7 @@ Spectrum Processing:
 
 Fitting Modes:
   m                    - Enter continuum fitting mode (define regions with SPACE)
+  M                    - Remove a continuum region
   ENTER (in continuum mode) - Fit polynomial continuum to defined regions
   g                    - Enter Single Mode Gaussian fit (click to fit, SPACE to select bounds)
   | (pipe)             - Enter Multi-Gaussian fit mode (fit multiple Gaussians simultaneously)
@@ -152,6 +153,7 @@ class HelpWindow(QtWidgets.QDialog):
 
 ## Fitting Modes
 - **m** - Enter continuum fitting mode (define regions with SPACE, then ENTER)
+- **M** - Remove a continuum region
 - **d** - Enter Single Mode Gaussian fit (SPACE to select bounds)
 - **|** (pipe) - Enter Multi-Gaussian fit mode (define bounds with SPACE and ENTER)
 - **n** - Single mode Voigt profile fitting

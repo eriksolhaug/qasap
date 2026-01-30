@@ -227,6 +227,7 @@ The central interactive spectrum visualization with the following controls:
 
 **Fitting Modes:**
 - `m` - Enter continuum fitting mode (define regions with `SPACE`, then hit `ENTER` to perform continuum fit -- note that you can change the polynomial order in the Control Panel)
+- `M` - Remove a continuum region
 - `d` - Enter Single Mode Gaussian fit (SPACE to select bounds)
 - `|` (pipe) - Enter Multi-Gaussian fit mode (fit multiple Gaussians simultaneously, define bounds with `SPACE` and hit `ENTER` to perform fit)
 - `n` - Single mode Voigt profile fitting
