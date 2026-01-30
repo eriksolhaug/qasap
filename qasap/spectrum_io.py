@@ -33,8 +33,8 @@ class SpectrumIO:
         def add(key: str, score: int, notes: str, options: Optional[Dict[str, Any]] = None):
             out.append({"key": key, "score": score, "notes": notes, "options": options or {}})
         
-        # ASCII files
-        if ext in (".txt", ".dat", ".csv", ".tsv", ".sed", ".ascii"):
+        # ASCII files (including no extension)
+        if ext in (".txt", ".dat", ".csv", ".tsv", ".sed", ".ascii") or ext == "":
             try:
                 delim, ncol = SpectrumIO._peek_ascii_layout(path)
                 if ncol >= 3:
