@@ -2726,12 +2726,16 @@ class SpectrumPlotter(QtWidgets.QWidget):
             self.is_step_plot = not self.is_step_plot
             self.step_spec.set_visible(self.is_step_plot)
             self.line_spec.set_visible(not self.is_step_plot)
-            self.step_error.set_visible(self.is_step_plot)
-            self.line_error.set_visible(not self.is_step_plot)
+            # Only toggle error visibility if error lines exist
+            if self.step_error is not None:
+                self.step_error.set_visible(self.is_step_plot)
+            if self.line_error is not None:
+                self.line_error.set_visible(not self.is_step_plot)
 
             # Update references to the currently visible lines
             self.spectrum_line = self.step_spec if self.is_step_plot else self.line_spec
-            self.error_line = self.step_error if self.is_step_plot else self.line_error
+            if self.step_error is not None:
+                self.error_line = self.step_error if self.is_step_plot else self.line_error
 
             plt.draw()  # Redraw to reflect changes
             print("Plot style toggled:", "Step plot" if self.is_step_plot else "Line plot")
