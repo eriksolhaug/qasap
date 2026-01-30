@@ -214,8 +214,8 @@ The central interactive spectrum visualization with the following controls:
 - `\` (backslash) - Reset spectrum view to starting bounds
 - `x` - Center on wavelength position under cursor
 - `u` / `i` - Set lower/upper x-bounds (wavelength bounds)
-- `t` / `T` - Zoom in/out horizontally (narrow/widen x-range)
-- `y` / `Y` - Zoom in/out vertically (narrow/widen y-range)
+- `T` / `t` - Zoom in/out horizontally (narrow/widen x-range)
+- `Y` / `y` - Zoom in/out vertically (narrow/widen y-range)
 - `O` / `P` - Set lower/upper y-bounds (flux bounds)
 - `l` - Toggle log y-axis
 - `L` - Toggle log x-axis
