@@ -844,9 +844,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
                             poly_coeffs.append(coeff_val)
                         # Reverse coefficients for np.polyval (expects highest order first)
                         poly_coeffs = poly_coeffs[::-1]
-                        print(f"[DEBUG] Listfit polynomial p{poly_count}_: coeffs={poly_coeffs}, order={order}")
                         y_poly = np.polyval(poly_coeffs, comp_x)
-                        print(f"[DEBUG] Polynomial values min={y_poly.min()}, max={y_poly.max()}, mean={y_poly.mean()}")
                         listfit_poly_sum[mask] += y_poly
                         poly_count += 1
 
