@@ -19,6 +19,7 @@ from scipy.special import wofz
 from scipy.interpolate import interp1d
 import lmfit
 from lmfit import Model, Parameters, conf_interval, minimize
+from lmfit.models import PolynomialModel
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton
 from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtCore import pyqtSignal, Qt
@@ -4543,13 +4544,14 @@ class SpectrumPlotter(QtWidgets.QWidget):
             elif comp['type'] == 'polynomial':
                 order = comp.get('order', 1)
                 prefix = f'p{poly_count}_'
-                # Create polynomial model
-                coeffs = np.polyfit(x_fit, y_fit, order)
-                poly_model = Model(lambda x, **params: np.polyval([params.get(f'{prefix}c{i}', coeffs[i]) for i in range(order+1)], x), 
-                                   prefix=prefix, independent_vars=['x'])
+                # Create polynomial model using lmfit's built-in PolynomialModel
+                poly_model = PolynomialModel(degree=order, prefix=prefix, independent_vars=['x'])
                 
+                # Set initial guesses from polyfit
+                coeffs = np.polyfit(x_fit, y_fit, order)
                 for i in range(order + 1):
-                    poly_model.set_param_hint(f'{prefix}c{i}', value=coeffs[i])
+                    param_name = f'{prefix}c{i}'
+                    poly_model.set_param_hint(param_name, value=coeffs[i])
                 
                 if model is None:
                     model = poly_model
