@@ -2984,7 +2984,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 else:
                     # Fit a new continuum if none exists within bounds
                     overall_continuum, continuum_params, continuum_err = self.fit_continuum(self.x_data, self.spec, self.err)
-                    continuum_fit = {'bounds': (min(self.x_data), max(self.x_data)), 'a': continuum_params[0], 'b': continuum_params[1], 'a_err': continuum_err[0], 'b_err': continuum_err[1]}
+                    continuum_fit = {'bounds': (min(self.x_data), max(self.x_data)), 'coeffs': continuum_params, 'coeffs_err': continuum_err, 'poly_order': 1}
                     self.continuum_fits.append(continuum_fit)
                     # Register with ItemTracker
                     bounds_str = f"λ: {min(self.x_data):.2f}-{max(self.x_data):.2f} Å"
@@ -3137,7 +3137,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 else:
                     # Fit a new continuum if none exists within bounds
                     overall_continuum, continuum_params, continuum_err = self.fit_continuum(self.x_data, self.spec, self.err)
-                    continuum_fit = {'bounds': (min(self.x_data), max(self.x_data)), 'a': continuum_params[0], 'b': continuum_params[1], 'a_err': continuum_err[0], 'b_err': continuum_err[1]}
+                    continuum_fit = {'bounds': (min(self.x_data), max(self.x_data)), 'coeffs': continuum_params, 'coeffs_err': continuum_err, 'poly_order': 1}
                     self.continuum_fits.append(continuum_fit)
                     # Register with ItemTracker
                     bounds_str = f"λ: {min(self.x_data):.2f}-{max(self.x_data):.2f} Å"
