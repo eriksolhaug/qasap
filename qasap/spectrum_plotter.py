@@ -842,6 +842,8 @@ class SpectrumPlotter(QtWidgets.QWidget):
                         for i in range(order + 1):
                             coeff_val = result.params[f'{prefix}c{i}'].value
                             poly_coeffs.append(coeff_val)
+                        # Reverse coefficients for np.polyval (expects highest order first)
+                        poly_coeffs = poly_coeffs[::-1]
                         print(f"[DEBUG] Listfit polynomial p{poly_count}_: coeffs={poly_coeffs}, order={order}")
                         y_poly = np.polyval(poly_coeffs, comp_x)
                         print(f"[DEBUG] Polynomial values min={y_poly.min()}, max={y_poly.max()}, mean={y_poly.mean()}")
@@ -4748,6 +4750,8 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 poly_coeffs = []
                 for i in range(order + 1):
                     poly_coeffs.append(params[f'{prefix}c{i}'].value)
+                # Reverse coefficients for np.polyval (expects highest order first)
+                poly_coeffs = poly_coeffs[::-1]
                 y_component = np.polyval(poly_coeffs, x_smooth)
                 line, = self.ax.plot(x_smooth, y_component, color=color, linestyle='--', linewidth=2)
                 # Register with ItemTracker
