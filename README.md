@@ -230,7 +230,7 @@ The central interactive spectrum visualization with the following controls:
 - `d` - Enter Single Mode Gaussian fit (SPACE to select bounds)
 - `|` (pipe) - Enter Multi-Gaussian fit mode (fit multiple Gaussians simultaneously, define bounds with `SPACE` and hit `ENTER` to perform fit)
 - `n` - Single mode Voigt profile fitting
-- `H` - Enter Listfit window (a continuum does not need to have been fitted)
+- `H` - Enter Listfit window (a continuum does not need to have been fitted, escape with `ESC`)
 
 Note for `d`, `|`, and `n`:  A continuum must have already been fitted. Define bounds with `SPACE`.
 
@@ -251,7 +251,7 @@ Note: You will need to select the line list and Toggle Display to view lines. Se
 - `v` - Calculate equivalent width of fitted line. In progress. Use with caution.
 
 **Redshift & Velocity:**
-- `z` - Enter redshift mode (select already fitted line under cursor with `SPACE`)
+- `z` - Enter redshift mode (select already fitted line under cursor with `SPACE`, escape with `ESC`)
 - `SPACE` (in velocity mode) - Toggle between wavelength and velocity space
 - `b` - Activate velocity mode (set rest-frame wavelength) - IN PROGRESS
 - `SPACE` (in mask mode) - Select bounds to mask out regions
