@@ -2907,7 +2907,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
             self.listfit_bounds = []
             self.listfit_bound_lines = []
             self.listfit_components = []
-            print("Listfit mode (H): Use the spacebar to define left and right boundaries.")
+            print("Listfit mode: Use the spacebar to define left and right boundaries.")
 
         # Set Listfit bounds with space bar
         if event.key == ' ' and self.listfit_mode:
@@ -3077,6 +3077,9 @@ class SpectrumPlotter(QtWidgets.QWidget):
                     self.component_id += 1
                     plt.draw() 
                     print(f"Fitted parameters: Amplitude = {amp}+-{amp_err}, Mean = {mean}+-{mean_err}, Std Dev = {stddev}+-{stddev_err}")
+                    # Update residual display if shown
+                    if self.is_residual_shown:
+                        self.calculate_and_plot_residuals()
 
                 # Remove bound lines after fit
                 for line in self.bound_lines:
@@ -3329,6 +3332,9 @@ class SpectrumPlotter(QtWidgets.QWidget):
                         fit_results['b'] = b
                         fit_results['logT_eff'] = np.log10(T_eff)
                 self.voigt_fits.append(fit_results)
+                # Update residual display if shown
+                if self.is_residual_shown:
+                    self.calculate_and_plot_residuals()
                 # Register with ItemTracker
                 position_str = f"λ: {fit_results.get('center', fit_results.get('mean', 0)):.2f} Å"
                 self.register_item('voigt', f'Voigt', fit_dict=fit_results, line_obj=fit_results.get('line'),
@@ -3549,6 +3555,9 @@ class SpectrumPlotter(QtWidgets.QWidget):
                                 fit_results['b'] = b
                                 fit_results['logT_eff'] = np.log10(T_eff)
                 self.voigt_fits.append(fit_results)
+                # Update residual display if shown
+                if self.is_residual_shown:
+                    self.calculate_and_plot_residuals()
                 # Register with ItemTracker
                 position_str = f"λ: {fit_results.get('center', fit_results.get('mean', 0)):.2f} Å"
                 self.register_item('voigt', f'Voigt', fit_dict=fit_results, line_obj=fit_results.get('line'),
@@ -4476,6 +4485,10 @@ class SpectrumPlotter(QtWidgets.QWidget):
         
         # Plot the components
         self.plot_listfit_components(result, components, x_fit, y_fit, err_fit, left_bound, right_bound)
+        
+        # Update residual display if shown
+        if self.is_residual_shown:
+            self.calculate_and_plot_residuals()
         
         # Store the fit
         self.listfit_fits.append({
