@@ -45,6 +45,8 @@ Measurement & Analysis:
   ?                    - Show keyboard shortcuts help window
 
 Redshift & Velocity:
+  z                    - Enter redshift mode (select already fitted line under cursor with SPACE)
+  escape               - Exit redshift mode
   SPACE (in velocity mode) - Toggle between wavelength and velocity space
   d                    - Activate velocity mode (set rest-frame wavelength)
   SPACE (in mask mode) - Select bounds to mask out regions
@@ -170,6 +172,8 @@ class HelpWindow(QtWidgets.QDialog):
 - **v** - Calculate equivalent width of fitted line
 
 ## Redshift & Velocity
+- **z** - Enter redshift mode (select already fitted line under cursor with SPACE)
+- **escape** - Exit redshift mode
 - **SPACE** (in velocity mode) - Toggle between wavelength and velocity space
 - **b** - Activate velocity mode (set rest-frame wavelength)
 - **SPACE** (in mask mode) - Select bounds to mask out regions
@@ -4416,6 +4420,11 @@ class SpectrumPlotter(QtWidgets.QWidget):
                     if self.is_residual_shown:
                         self.calculate_and_plot_residuals()
                     break
+
+        # Exit redshift mode with Escape
+        if event.key == 'escape' and self.redshift_estimation_mode:
+            self.redshift_estimation_mode = False
+            print('Exiting redshift estimation mode.')
 
         # Enter redshift estimation mode
         if event.key == 'z':

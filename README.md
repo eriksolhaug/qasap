@@ -251,6 +251,7 @@ Note: You will need to select the line list and Toggle Display to view lines. Se
 - `v` - Calculate equivalent width of fitted line. In progress. Use with caution.
 
 **Redshift & Velocity:**
+- `z` - Enter redshift mode (select already fitted line under cursor with `SPACE`)
 - `SPACE` (in velocity mode) - Toggle between wavelength and velocity space
 - `b` - Activate velocity mode (set rest-frame wavelength) - IN PROGRESS
 - `SPACE` (in mask mode) - Select bounds to mask out regions
