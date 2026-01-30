@@ -1780,10 +1780,12 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 if self.selected_gaussian:
                     self.center_profile = self.selected_gaussian.get('mean')
                     self.center_profile_err = self.selected_gaussian.get('mean_err')
+                    print(f"[DEBUG] Gaussian mean_err from fit dict: {self.center_profile_err}")
                 # Try to get from selected Voigt
                 elif self.selected_voigt:
                     self.center_profile = self.selected_voigt.get('center')
                     self.center_profile_err = self.selected_voigt.get('center_err')
+                    print(f"[DEBUG] Voigt center_err from fit dict: {self.center_profile_err}")
                 else:
                     print("Error: No Gaussian or Voigt selected for redshift estimation")
                     return
