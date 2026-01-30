@@ -212,7 +212,7 @@ The central interactive spectrum visualization with the following controls:
 - `z`: Enter redshift mode (select already fitted emission line to estimate redshift)
 - `g`: Single Gaussian fitting mode
 - `v`: Single Voigt profile fitting mode
-- `h`: Listfit mode (multi-component simultaneous fitting)
+- `H`: Listfit mode (multi-component simultaneous fitting)
 - `m`: Continuum modeling mode
 - `:`: Bayesian MCMC fitting mode
 - `l`: Toggle log scale
@@ -235,14 +235,14 @@ QASAP employs different fitting algorithms optimized for each analysis task:
 |------|-----|----------------|--------|----------|
 | Single Gaussian (`g`) | `g` + `d` | **scipy.optimize.curve_fit** | Least-squares optimization | Quick individual profile fitting |
 | Single Voigt (`v`) | `v` + `d` | **scipy.optimize.curve_fit** | Least-squares optimization | Quick individual profile fitting with natural broadening |
-| Listfit (`h`) | `h` | **lmfit (leastsq)** | Composite Model with simultaneous parameter fitting | Multi-component simultaneous fitting with full covariance estimation |
+| Listfit (`H`) | `H` | **lmfit (leastsq)** | Composite Model with simultaneous parameter fitting | Multi-component simultaneous fitting with full covariance estimation |
 | Bayesian MCMC (`:`) | `:` | **emcee** | Posterior sampling (work in progress) | Posterior probability distributions for parameters |
 
 **Key Differences:**
 
 - **Single Mode (`g`/`v` + `d`)**: Uses `scipy.optimize.curve_fit` for individual component fitting. Fast but limited uncertainty estimation. Suitable for isolated, well-separated lines.
 
-- **Listfit Mode (`h`)**: Uses `lmfit`'s composite Model system with `leastsq` minimization. Allows simultaneous fitting of multiple Gaussians, Voigts, and polynomial backgrounds with full parameter correlation tracking. Provides robust error estimation through covariance matrix analysis. **Recommended for crowded spectral regions or blended profiles.**
+- **Listfit Mode (`H`)**: Uses `lmfit`'s composite Model system with `leastsq` minimization. Allows simultaneous fitting of multiple Gaussians, Voigts, and polynomial backgrounds with full parameter correlation tracking. Provides robust error estimation through covariance matrix analysis. **Recommended for crowded spectral regions or blended profiles.**
 
 - **MCMC Mode (`:`)**: Uses `emcee` for Bayesian posterior sampling (currently in development). Provides posterior distributions and uncertainty quantification beyond frequentist approach. (Currently only works for a single line first estimated using Single Mode)
 
@@ -301,7 +301,7 @@ Lines in the spectrum automatically update when redshift is changed via:
 Dialog for simultaneous fitting of multiple spectral components:
 
 **Workflow:**
-1. Press `h` on spectrum to activate listfit mode
+1. Press `H` on spectrum to activate listfit mode
 2. Define fitting bounds by clicking two wavelengths (spacebar confirms each)
 3. Listfit Window opens with component selection
 4. Choose component types and quantities:

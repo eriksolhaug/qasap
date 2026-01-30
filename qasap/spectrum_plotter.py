@@ -2901,13 +2901,13 @@ class SpectrumPlotter(QtWidgets.QWidget):
                     plt.draw()  # Redraw the plot after removal
                     break  # Exit the loop after the first match
 
-        # Listfit mode - activate with 'h' key
-        if event.key == 'h':
+        # Listfit mode - activate with 'H' key
+        if event.key == 'H':
             self.listfit_mode = True
             self.listfit_bounds = []
             self.listfit_bound_lines = []
             self.listfit_components = []
-            print("Listfit mode: Use the spacebar to define left and right boundaries.")
+            print("Listfit mode (H): Use the spacebar to define left and right boundaries.")
 
         # Set Listfit bounds with space bar
         if event.key == ' ' and self.listfit_mode:
