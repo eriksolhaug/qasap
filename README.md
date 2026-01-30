@@ -1,5 +1,5 @@
 # QASAP — Quick Analysis of Spectra and Profiles
-## Version 0.8
+## Version 0.9
 
 ![PyQt5](https://img.shields.io/badge/PyQt5-5.15%2B-blue?logo=pyqt&logoColor=white)
 ![scipy](https://img.shields.io/badge/scipy-1.5%2B-brightgreen?logo=python&logoColor=white)
@@ -32,16 +32,16 @@ Interactive Python tool for comprehensive 1D spectral analysis with intelligent 
 git clone https://github.com/eriksolhaug/qasap.git
 ```
 
-To **download a specific tagged version** (e.g., v0.8):
+To **download a specific tagged version** (e.g., v0.9):
 
 ```bash
 # Clone only the tag (shallow clone, fastest)
-git clone --depth 1 --branch v0.8 https://github.com/eriksolhaug/qasap.git
+git clone --depth 1 --branch v0.9 https://github.com/eriksolhaug/qasap.git
 
 # Or clone the whole repo and checkout the tag
 git clone https://github.com/eriksolhaug/qasap.git
 cd qasap
-git checkout v0.8
+git checkout v0.9
 ```
 
 ### Conda Environment Setup
@@ -337,7 +337,8 @@ Centralized feature management panel accessed with `*` key:
 
 ## Versions
 
-- **v0.8** (current): Listfit mode for simultaneous multi-component fitting, ItemTracker for centralized feature management with multi-select and deletion, auto-fit registration, redshift mode improvements
+- **v0.9** (current): Fixed Listfit parameter error extraction, PolynomialModel integration for proper coefficient variation, Item Tracker synchronization with internal storage removal
+- **v0.8**: Listfit mode for simultaneous multi-component fitting, ItemTracker for centralized feature management with multi-select and deletion, auto-fit registration, redshift mode improvements
 - **v0.7** (stable): Available as tagged release on GitHub. Refactored with intelligent format auto-detection, modular architecture, and comprehensive UI
 - **v0.5** (legacy): Available in `qasap_v0.5/` directory with full Voigt/Gaussian fitting, MCMC, velocity mode
 

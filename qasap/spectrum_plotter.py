@@ -1,4 +1,4 @@
-# qasap Spectrum Plotter --- v0.8
+# qasap Spectrum Plotter --- v0.9
 """
 Main spectrum plotter widget for interactive spectral analysis
 """
@@ -443,7 +443,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
         self.update_ticks(self.ax)
 
         # Set the custom window title
-        self.fig.canvas.manager.set_window_title("QASAP - Quick Analysis of Spectra and Profiles (v0.8)")
+        self.fig.canvas.manager.set_window_title("QASAP - Quick Analysis of Spectra and Profiles (v0.9)")
 
         self.ax.legend()
 
