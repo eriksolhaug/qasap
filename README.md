@@ -208,24 +208,61 @@ The central interactive spectrum visualization with the following controls:
 - Redshift tracking with selected line highlighting
 
 **Keyboard Shortcuts:**
-- `e`: Open LineList Window for line identification
-- `z`: Enter redshift mode (select already fitted emission line to estimate redshift)
-- `g`: Single Gaussian fitting mode
-- `v`: Single Voigt profile fitting mode
-- `H`: Listfit mode (multi-component simultaneous fitting)
-- `m`: Continuum modeling mode
-- `:`: Bayesian MCMC fitting mode
-- `l`: Toggle log scale
-- `f`: Apply smoothing to spectrum
-- `c`: Clear currently selected component
-- `w`: Remove Gaussian/Voigt from plot
-- `M`: Remove continuum model
-- `*`: Show/hide Item Tracker window
-- `q`: Quit application
 
-**Interactions:**
-- **Click on spectrum**: Select wavelength for analysis or component placement
-- **Spacebar**: Confirm actions in fitting modes or confirm bounds in listfit mode
+**Navigation & View Controls:**
+- `[` / `]` - Pan left/right through spectrum
+- `\` (backslash) - Reset spectrum view to starting bounds
+- `x` - Center on wavelength position under cursor
+- `u` / `i` - Set lower/upper x-bounds (wavelength bounds)
+- `t` / `T` - Zoom in/out horizontally (narrow/widen x-range)
+- `y` / `Y` - Zoom in/out vertically (narrow/widen y-range)
+- `O` / `P` - Set lower/upper y-bounds (flux bounds)
+- `l` - Toggle log y-axis
+- `L` - Toggle log x-axis
+- `f` - Enter fullscreen mode
+- `1`-`9` - Apply Gaussian smoothing with different kernel sizes
+- `0` - Remove smoothing (restore original spectrum)
+- `~` (tilde) - Toggle between step plot and line plot
+- `` ` `` (backtick) - Save screenshot of plot
+
+**Fitting Modes:**
+- `m` - Enter continuum fitting mode (define regions with `SPACE`, then hit `ENTER` to perform continuum fit -- note that you can change the polynomial order in the Control Panel)
+- `d` - Enter Single Mode Gaussian fit (SPACE to select bounds)
+- `|` (pipe) - Enter Multi-Gaussian fit mode (fit multiple Gaussians simultaneously, define bounds with `SPACE` and hit `ENTER` to perform fit)
+- `n` - Single mode Voigt profile fitting
+- `H` - Enter Listfit window (a continuum does not need to have been fitted)
+
+Note for `d`, `|`, and `n`:  A continuum must have already been fitted. Define bounds with `SPACE`.
+
+**Line List:**
+- `e` - Open Line List window
+
+Note: You will need to select the line list and Toggle Display to view lines. Set the redshift applied to the line list in the Control Panel.
+
+**Measurement & Analysis:**
+- `r` - Toggle residual panel
+- `w` - Remove fitted profile under cursor
+- `a` - Save Gaussian fit info to file
+- `A` - Save Voigt fit info to file
+- `S` - Save continuum fit info to file
+- `;` (semicolon) - Show/toggle total line for Single Mode fitted lines
+- `v` - Calculate equivalent width of fitted line. In progress. Use with caution.
+
+**Redshift & Velocity:**
+- `SPACE` (in velocity mode) - Toggle between wavelength and velocity space
+- `b` - Activate velocity mode (set rest-frame wavelength) - IN PROGRESS
+- `SPACE` (in mask mode) - Select bounds to mask out regions
+- `RETURN` (in mask mode) - Finish masking
+
+**Instrument Filters & Bands:**
+- `!` through `)` (Shift+1-0) - Toggle instrument bandpass overlays (press Shift+number)
+- `-` / `_` / `=` / `+` - Show filter bandpasses (requires downloaded filter files)
+
+**Item Management:**
+- `j` - Toggle Item Tracker window
+
+**File Storage:**
+All saved screenshots, redshifts, and profile info are stored in the directory where QASAP was launched from.
 
 ### Fitting Engines by Mode
 
@@ -233,14 +270,15 @@ QASAP employs different fitting algorithms optimized for each analysis task:
 
 | Mode | Key | Fitting Engine | Method | Use Case |
 |------|-----|----------------|--------|----------|
-| Single Gaussian (`g`) | `g` + `d` | **scipy.optimize.curve_fit** | Least-squares optimization | Quick individual profile fitting |
-| Single Voigt (`v`) | `v` + `d` | **scipy.optimize.curve_fit** | Least-squares optimization | Quick individual profile fitting with natural broadening |
+| Single Gaussian (`d`) | `d` | **scipy.optimize.curve_fit** | Least-squares optimization | Quick individual profile fitting |
+| Single Voigt (`n`) | `n` | **scipy.optimize.curve_fit** | Least-squares optimization | Quick individual profile fitting with natural broadening |
+| Multi-Gaussian (`\|`) | `\|` | **scipy.optimize.curve_fit** | Least-squares optimization (sequential) | Multiple Gaussian fitting in same region |
 | Listfit (`H`) | `H` | **lmfit (leastsq)** | Composite Model with simultaneous parameter fitting | Multi-component simultaneous fitting with full covariance estimation |
 | Bayesian MCMC (`:`) | `:` | **emcee** | Posterior sampling (work in progress) | Posterior probability distributions for parameters |
 
 **Key Differences:**
 
-- **Single Mode (`g`/`v` + `d`)**: Uses `scipy.optimize.curve_fit` for individual component fitting. Fast but limited uncertainty estimation. Suitable for isolated, well-separated lines.
+- **Single Mode (`d`/`n`) and Multi-Gaussian Mode (`|`)**: Uses `scipy.optimize.curve_fit` for individual component fitting. Fast but limited uncertainty estimation. Suitable for isolated, well-separated lines.
 
 - **Listfit Mode (`H`)**: Uses `lmfit`'s composite Model system with `leastsq` minimization. Allows simultaneous fitting of multiple Gaussians, Voigts, and polynomial backgrounds with full parameter correlation tracking. Provides robust error estimation through covariance matrix analysis. **Recommended for crowded spectral regions or blended profiles.**
 

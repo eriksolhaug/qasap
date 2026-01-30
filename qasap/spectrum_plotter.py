@@ -1,6 +1,66 @@
 # qasap Spectrum Plotter --- v0.9
 """
 Main spectrum plotter widget for interactive spectral analysis
+
+KEYBOARD SHORTCUTS:
+
+Navigation & View Controls:
+  [ / ]                - Pan left/right through spectrum
+  \ (backslash)        - Reset spectrum view to starting bounds
+  x                    - Center on mouse wavelength position
+  u / i                - Set lower/upper x-bounds (wavelength bounds)
+  t / T                - Zoom in/out horizontally (narrow/widen x-range)
+  y / Y                - Zoom in/out vertically (narrow/widen y-range)
+  O / P                - Set lower/upper y-bounds (flux bounds)
+  l                    - Toggle log y-axis
+  L                    - Toggle log x-axis
+  f                    - Enter fullscreen mode
+
+Spectrum Processing:
+  1-9                  - Apply Gaussian smoothing with different kernel sizes
+  0                    - Remove smoothing (restore original spectrum)
+  ~ (tilde)            - Toggle between step plot and line plot
+  ` (backtick)         - Save screenshot of plot
+
+Fitting Modes:
+  m                    - Enter continuum fitting mode (define regions with SPACE)
+  ENTER (in continuum mode) - Fit polynomial continuum to defined regions
+  g                    - Enter Single Mode Gaussian fit (click to fit, SPACE to select bounds)
+  | (pipe)             - Enter Multi-Gaussian fit mode (fit multiple Gaussians simultaneously)
+  n                    - Single mode Voigt profile fitting
+  e                    - Open line list selector window (new line list system)
+  k                    - Open Listfit window for composite fitting
+
+Measurement & Analysis:
+  v                    - Calculate equivalent width of fitted line
+  a                    - Save Gaussian fit info to file
+  A                    - Save Voigt fit info to file
+  S                    - Save continuum fit info to file
+  ;                    - Show/toggle total line for Single Mode fitted lines
+  w                    - Remove fitted profile under cursor
+  r                    - Toggle residual panel
+  j                    - Toggle Item Tracker window
+
+Redshift & Velocity:
+  SPACE (in velocity mode) - Toggle between wavelength and velocity space
+  d                    - Activate velocity mode (set rest-frame wavelength)
+  SPACE (in mask mode) - Select bounds to mask out regions
+  RETURN (in mask mode) - Finish masking
+
+Instrument Filters & Bands:
+  ! through ) (Shift+1-0) - Toggle instrument bandpass overlays (press Shift+number)
+  - / _ / = / +        - Show filter bandpasses (requires downloaded filter files)
+
+Item Management:
+  * (asterisk)         - Toggle Item Tracker window visibility
+
+Display Options (Line Lists):
+  Line lists from the selector (e key) automatically display with current pan position
+  Redshift adjustments update line displays immediately
+
+File Storage:
+  All saved screenshots, redshifts, and profile info are stored in the directory
+  where QASAP was launched from.
 """
 
 import argparse
