@@ -1756,6 +1756,9 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 self.selected_gaussian = fit
                 self.selected_voigt = None
                 self.redshift_estimation_mode = True
+                # IMPORTANT: Clear center_profile so estimate_redshift will extract from the fit dict
+                self.center_profile = None
+                self.center_profile_err = None
                 self.plot_redshift_gaussian(fit)
                 print("Redshift estimation mode activated for Gaussian")
                 # Open line list window for line selection
@@ -1766,6 +1769,9 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 self.selected_voigt = fit
                 self.selected_gaussian = None
                 self.redshift_estimation_mode = True
+                # IMPORTANT: Clear center_profile so estimate_redshift will extract from the fit dict
+                self.center_profile = None
+                self.center_profile_err = None
                 self.plot_redshift_voigt(fit)
                 print("Redshift estimation mode activated for Voigt")
                 # Open line list window for line selection
