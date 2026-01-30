@@ -822,8 +822,30 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 coeffs = continuum_fit['coeffs']
                 continuum_sum[(self.x_data >= left_bound) & (self.x_data <= right_bound)] = np.polyval(coeffs, comp_x)
 
-        # Calculate residual as (spectrum - fitted Gaussians - continuum)
-        return self.spec - gaussian_sum - voigt_sum - continuum_sum
+        # Add Listfit polynomial components to residuals
+        listfit_poly_sum = np.zeros_like(self.spec)
+        if self.listfit_fits:
+            for listfit in self.listfit_fits:
+                left_bound, right_bound = listfit['bounds']
+                comp_x = self.x_data[(self.x_data >= left_bound) & (self.x_data <= right_bound)]
+                components = listfit['components']
+                result = listfit['result']
+                
+                # Find and add polynomial components from the listfit
+                poly_count = 0
+                for comp in components:
+                    if comp['type'] == 'polynomial':
+                        order = comp.get('order', 1)
+                        prefix = f'p{poly_count}_'
+                        poly_coeffs = []
+                        for i in range(order + 1):
+                            coeff_val = result.params[f'{prefix}c{i}'].value
+                            poly_coeffs.append(coeff_val)
+                        listfit_poly_sum[(self.x_data >= left_bound) & (self.x_data <= right_bound)] += np.polyval(poly_coeffs, comp_x)
+                        poly_count += 1
+
+        # Calculate residual as (spectrum - fitted Gaussians - Voigts - continuum - listfit polynomials)
+        return self.spec - gaussian_sum - voigt_sum - continuum_sum - listfit_poly_sum
 
     def update_residual_xbounds(self, event):
         if self.is_residual_shown and self.residual_ax is not None:
