@@ -1781,14 +1781,28 @@ class SpectrumPlotter(QtWidgets.QWidget):
                     self.center_profile = self.selected_gaussian.get('mean')
                     self.center_profile_err = self.selected_gaussian.get('mean_err')
                     print(f"[DEBUG] Gaussian mean_err from fit dict: {self.center_profile_err}")
+                    # Print the fitted parameters like in redshift mode
+                    amp = self.selected_gaussian.get('amp')
+                    mean = self.selected_gaussian.get('mean')
+                    stddev = self.selected_gaussian.get('stddev')
+                    print(f"Amplitude: {amp}, Mean: {mean}, Sigma: {stddev}")
                 # Try to get from selected Voigt
                 elif self.selected_voigt:
                     self.center_profile = self.selected_voigt.get('center')
                     self.center_profile_err = self.selected_voigt.get('center_err')
                     print(f"[DEBUG] Voigt center_err from fit dict: {self.center_profile_err}")
+                    # Print the fitted parameters like in redshift mode
+                    amp = self.selected_voigt.get('amp')
+                    center = self.selected_voigt.get('center')
+                    sigma = self.selected_voigt.get('sigma')
+                    gamma = self.selected_voigt.get('gamma')
+                    print(f"Amplitude: {amp}, Center: {center}, Sigma: {sigma}, Gamma: {gamma}")
                 else:
                     print("Error: No Gaussian or Voigt selected for redshift estimation")
                     return
+            
+            # Print center info like in redshift mode
+            print(f"Center of selected Gaussian: {self.center_profile:.6f}+-{self.center_profile_err:.6f}")
             
             est_redshift = (self.center_profile - self.selected_rest_wavelength) / self.selected_rest_wavelength
             est_redshift_err = self.center_profile_err / self.selected_rest_wavelength
