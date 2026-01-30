@@ -2772,7 +2772,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
                     return  # Exit if the cursor is outside the plot area
 
         # Show/hide item tracker with 'Ctrl+I' or similar accessible key - using '*' key
-        if event.key == '*':
+        if event.key == 'j':
             if self.item_tracker.isVisible():
                 self.item_tracker.hide()
             else:
@@ -4094,7 +4094,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 self.display_linelist()
             if self.markers and self.labels:
                 self.update_marker_and_label_positions()
-        elif event.key == 'o':
+        elif event.key == 'O':
             self.y_upper_bound = event.ydata
             self.update_bounds()
             self.update_ticks(self.ax)
@@ -4105,7 +4105,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 self.display_linelist()
             if self.markers and self.labels:
                 self.update_marker_and_label_positions()
-        elif event.key == 'p':
+        elif event.key == 'P':
             self.y_lower_bound = event.ydata
             self.update_bounds()
             self.update_ticks(self.ax)
