@@ -227,6 +227,25 @@ The central interactive spectrum visualization with the following controls:
 - **Click on spectrum**: Select wavelength for analysis or component placement
 - **Spacebar**: Confirm actions in fitting modes or confirm bounds in listfit mode
 
+### Fitting Engines by Mode
+
+QASAP employs different fitting algorithms optimized for each analysis task:
+
+| Mode | Key | Fitting Engine | Method | Use Case |
+|------|-----|----------------|--------|----------|
+| Single Gaussian (`g`) | `g` + `d` | **scipy.optimize.curve_fit** | Least-squares optimization | Quick individual profile fitting |
+| Single Voigt (`v`) | `v` + `d` | **scipy.optimize.curve_fit** | Least-squares optimization | Quick individual profile fitting with natural broadening |
+| Listfit (`h`) | `h` + spacebar | **lmfit (leastsq)** | Composite Model with simultaneous parameter fitting | Multi-component simultaneous fitting with full covariance estimation |
+| Bayesian MCMC (`:`) | `:` | **emcee** | Posterior sampling (work in progress) | Posterior probability distributions for parameters |
+
+**Key Differences:**
+
+- **Single Mode (`g`/`v` + `d`)**: Uses `scipy.optimize.curve_fit` for individual component fitting. Fast but limited uncertainty estimation. Suitable for isolated, well-separated lines.
+
+- **Listfit Mode (`h`)**: Uses `lmfit`'s composite Model system with `leastsq` minimization. Allows simultaneous fitting of multiple Gaussians, Voigts, and polynomial backgrounds with full parameter correlation tracking. Provides robust error estimation through covariance matrix analysis. **Recommended for crowded spectral regions or blended profiles.**
+
+- **MCMC Mode (`:`)**: Uses `emcee` for Bayesian posterior sampling (currently in development). Provides posterior distributions and uncertainty quantification beyond frequentist approach. (Currently only works for a single line first estimated using Single Mode)
+
 ### 2. Control Panel (Sidebar)
 Displays real-time analysis information and fitting parameters:
 
