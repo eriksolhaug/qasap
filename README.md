@@ -8,15 +8,15 @@
 ![lmfit](https://img.shields.io/badge/lmfit-0.9%2B-purple?logo=python&logoColor=white)
 ![emcee](https://img.shields.io/badge/emcee-3.0%2B-yellowgreen?logo=python&logoColor=white)
 
-Interactive Python tool for comprehensive 1D spectral analysis with intelligent file format detection. QASAP provides both quick-look functionality and advanced analysis features including multi-component line fitting, continuum modeling, and Bayesian MCMC fitting.
+Interactive Python tool for 1D spectral analysis with file format detection. QASAP provides both quick-look functionality and some more advanced analysis features including multi-component line fitting, continuum modeling, and Bayesian MCMC fitting.
 
 ## Features
 
-- **Intelligent Format Auto-Detection**: Automatically detects 7+ ASCII and FITS spectrum formats with confidence scoring
+- **File Format Auto-Detection**: Automatically detects 7+ ASCII and FITS spectrum formats with confidence scoring
 - **Interactive Plotting**: Real-time spectrum visualization with zoom, pan, and smooth controls
 - **Multi-Component Fitting**: Gaussian and Voigt profile fitting (single and multi-component) with Listfit mode for simultaneous fitting
 - **Line Analysis**: Equivalent width, redshift estimation, velocity mode analysis
-- **Advanced Fitting**: Bayesian MCMC with posterior distributions (work in progress still - works well for single profiles)
+- **Other Fitting**: Bayesian MCMC with posterior distributions (work in progress still - works well for single profiles)
 - **Item Tracker**: Centralized management of all plotted components (Gaussians, Voigts, polynomials, continuum) with multi-select and deletion capabilities
 - **Utilities**: LSF convolution, line identification, filter overlays
 
