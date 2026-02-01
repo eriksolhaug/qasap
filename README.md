@@ -26,7 +26,7 @@ Interactive Python tool for comprehensive 1D spectral analysis with intelligent 
 - Python 3.7+
 - numpy, scipy, matplotlib, astropy, pandas, lmfit, PyQt5, emcee, corner
 
-### Quick Start
+### Download
 
 ```bash
 git clone https://github.com/eriksolhaug/qasap.git
