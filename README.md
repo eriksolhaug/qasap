@@ -13,7 +13,7 @@ Interactive Python tool for 1D spectral analysis with file format detection. QAS
 ## Features
 
 - **File Format Auto-Detection**: Automatically detects 7+ ASCII and FITS spectrum formats with confidence scoring
-- **Interactive Plotting**: Real-time spectrum visualization with zoom, pan, and smooth controls
+- **Interactive Plotting**: 1D spectrum visualization with zoom, pan, and smooth controls
 - **Multi-Component Fitting**: Gaussian and Voigt profile fitting (single and multi-component) with Listfit mode for simultaneous fitting
 - **Line Analysis**: Equivalent width, redshift estimation, velocity mode analysis
 - **Other Fitting**: Bayesian MCMC with posterior distributions (work in progress still - works well for single profiles)
