@@ -1,4 +1,4 @@
-# ![QASAP Logo](logo/qasap_logo.png)   QASAP — Quick Analysis of Spectra and Profiles
+# ![QASAP Logo](logo/qasap_logo.png)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;QASAP — Quick Analysis of Spectra and Profiles
 ## Version 0.9
 
 ![PyQt5](https://img.shields.io/badge/PyQt5-5.15%2B-blue?logo=pyqt&logoColor=white)
