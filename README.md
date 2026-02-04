@@ -146,6 +146,40 @@ This method uses the entry point defined in `setup.py` to create a proper comman
    sudo ln -s $QASAP_PATH /usr/local/bin/qasap
    ```
 
+## Quick Start
+
+### Running QASAP
+
+Once installed with `pip install -e .`, you have two ways to launch QASAP:
+
+**Without a Spectrum File:**
+```bash
+qasap
+```
+This launches QASAP with an empty plotter. You can then load a spectrum using the Open button in the Control Panel.
+
+**With a Spectrum File:**
+```bash
+qasap <path/to/spectrum.fits>
+qasap example/sample_spectrum.txt
+qasap data/my_spectrum.txt --redshift 0.1
+```
+
+### Opening a Spectrum
+
+You can load a spectrum file in two ways:
+
+1. **Command Line**: Provide the file path as an argument when launching:
+   ```bash
+   qasap /path/to/your/spectrum.fits
+   ```
+
+2. **GUI Open Button**: 
+   - Launch QASAP with `qasap` (no file required)
+   - In the Control Panel (left side), click the **Open** button
+   - A file browser will appear—navigate to and select your spectrum file
+   - QASAP automatically detects the file format and loads the data
+
 ## Package Structure
 
 ```
