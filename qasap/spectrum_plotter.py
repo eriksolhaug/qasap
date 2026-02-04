@@ -98,6 +98,7 @@ from PyQt5.QtWidgets import QFileDialog
 from datetime import datetime
 import ast
 import re
+from qasap.spectrum_io import SpectrumIO
 
 # Suppress numexpr pandas UserWarning
 warnings.filterwarnings('ignore', category=UserWarning, module='pandas.core.computation.expressions')
@@ -389,6 +390,11 @@ class SpectrumPlotter(QtWidgets.QWidget):
         self.apply_button = QPushButton("Enter", self)
         self.apply_button.move(20, 120)
         self.apply_button.clicked.connect(self.apply_changes)
+        
+        # Create an "Open" button to load a new spectrum
+        self.open_button = QPushButton("Open", self)
+        self.open_button.move(120, 120)
+        self.open_button.clicked.connect(self.open_spectrum_file)
 
         # Create polynomial order field (for continuum fitting, hidden by default)
         self.label_poly_order = QLabel("Poly Order:", self)
@@ -449,6 +455,95 @@ class SpectrumPlotter(QtWidgets.QWidget):
             self.fig.canvas.draw_idle()  # Redraw the figure to update the display
         except ValueError:
             print("Invalid input for redshift, zoom factor, or polynomial order. Please enter numerical values.")
+
+    def open_spectrum_file(self):
+        """Open a file dialog to select and load a new spectrum file."""
+        from PyQt5.QtWidgets import QFileDialog
+        from qasap.format_picker_dialog import FormatPickerDialog
+        
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open Spectrum File",
+            "",
+            "All Files (*);;FITS Files (*.fits *.fit);;ASCII Files (*.txt *.dat)"
+        )
+        
+        if not file_path:
+            return  # User cancelled
+        
+        try:
+            # Auto-detect format
+            candidates = SpectrumIO.detect_spectrum_format(file_path)
+            if not candidates:
+                print("Error: Could not auto-detect format for the selected file")
+                return
+            
+            # Show format picker dialog
+            dialog = FormatPickerDialog(file_path, candidates, parent=self)
+            result = dialog.exec_()
+            
+            if result != QtWidgets.QDialog.Accepted:
+                return  # User cancelled
+            
+            selection = dialog.get_selection()
+            if not selection:
+                return
+            
+            fmt, options = selection
+            
+            # Load the spectrum
+            wav, spec, err, meta = SpectrumIO.read_spectrum(file_path, fmt=fmt, options=options)
+            
+            # Load the data
+            self.load_spectrum_data(wav, spec, err, meta, file_path)
+            
+            # Redraw the plot
+            self.clear_plot_and_reset()
+            self.plot_spectrum()
+            
+            print(f"Loaded: {file_path}")
+            
+        except Exception as e:
+            print(f"Error loading spectrum: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def load_spectrum_data(self, wav, spec, err, meta, fits_file):
+        """Load spectrum data into the plotter."""
+        self.wav = wav
+        self.spec = spec
+        self.err = err
+        self.fits_file = fits_file
+        
+        # Reset smoothing and other processing
+        self.smoothing_kernel = None
+        self.smoothed_spectrum = None
+        
+        print(f"Loaded {len(wav)} wavelength points")
+        print(f"Wavelength: {wav[0]:.2f} - {wav[-1]:.2f} Å")
+        print(f"Flux range: {np.min(spec):.2e} - {np.max(spec):.2e}")
+
+    def clear_plot_and_reset(self):
+        """Clear the current plot and reset all fitting data and item tracker."""
+        # Clear the axis
+        self.ax.clear()
+        
+        # Reset all fitting data
+        self.fitted_gaussians = []
+        self.fitted_voigts = []
+        self.fitted_continuum_coeffs = None
+        self.continuum_points_x = []
+        self.continuum_points_y = []
+        self.item_tracker.clear_all_items()
+        
+        # Reset other states
+        self.smoothing_kernel = None
+        self.smoothed_spectrum = None
+        self.residuals = None
+        self.show_residuals = False
+        self.is_step_plot = False
+        self.redshift = 0.0
+        self.input_redshift.setText(str(self.redshift))
 
     def plot_spectrum(self):
         # Read lines and instrument bands
