@@ -109,42 +109,41 @@ python qasap.py spectrum.fits --fmt fits:image1d
 
 ### Making `qasap` Executable
 
-To run QASAP from anywhere as a simple `qasap` command:
+To run QASAP from anywhere as a simple `qasap` command, use one of these options:
 
-1. **Make the script executable:** (run from inside the `qasap/` directory where the `qasap.py` script is)
+**Option 1: Package Installation (Recommended)**
+
+Install QASAP as a Python package, which automatically creates the executable:
+
+```bash
+# From inside the qasap directory
+pip install .
+
+# Or in development mode (changes are reflected immediately)
+pip install -e .
+```
+
+Then run from anywhere:
+```bash
+qasap ~/path/to/spectrum.fits
+```
+
+This method uses the entry point defined in `setup.py` to create a proper command-line executable.
+
+**Option 2: Manual Symlink**
+
+1. **Make the script executable:**
    ```bash
    chmod +x qasap.py
    ```
 
-2. **Ensure the shebang line is present** (should already be at the top of qasap.py):
-   ```python
-   #!/usr/bin/env python
-   ```
-
-3. **Create a symlink or add to PATH:**
-
-   **Option A: Create a symlink in a directory on your PATH**
+2. **Create a symlink in a directory on your PATH:**
    ```bash
    # Find your qasap installation path
    QASAP_PATH=$(pwd)/qasap.py
    
    # Link to a bin directory in your PATH (example: /usr/local/bin)
    sudo ln -s $QASAP_PATH /usr/local/bin/qasap
-   ```
-
-   **Option B: Add qasap directory to PATH** (recommended for development)
-   ```bash
-   # Add this line to your shell profile (~/.bash_profile, ~/.zshrc, etc.)
-   export PATH="/path/to/qasap/qasap:$PATH"
-   
-   # Then create a shell script wrapper at qasap/qasap:
-   #!/bin/bash
-   exec python /path/to/qasap/qasap/qasap.py "$@"
-   ```
-
-4. **Test:**
-   ```bash
-   qasap ~/path/to/spectrum.fits
    ```
 
 ## Package Structure
