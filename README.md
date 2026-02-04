@@ -65,7 +65,7 @@ pip install -r requirements.txt
 conda install numpy scipy matplotlib astropy pandas lmfit pyqt emcee corner
 
 # Run QASAP
-python qasap.py spectrum.fits
+python qasap.py <spectrum.fits>
 ```
 
 
@@ -75,13 +75,13 @@ python qasap.py spectrum.fits
 
 ```bash
 # Automatic format detection
-python qasap.py spectrum.fits
+python qasap.py <spectrum.fits>
 
 # Preview detected formats
-python qasap.py spectrum.fits --detect
+python qasap.py <spectrum.fits> --detect
 
 # Force specific format if needed
-python qasap.py spectrum.fits --fmt fits:image1d
+python qasap.py <spectrum.fits> --fmt fits:image1d
 ```
 
 ### Supported Formats
@@ -126,7 +126,7 @@ pip install -e .
 Now you can run QASAP from anywhere:
 
 ```bash
-qasap ~/path/to/spectrum.fits
+qasap <path/to/spectrum.fits>
 ```
 
 This method uses the entry point defined in `setup.py` to create a proper command-line executable.
