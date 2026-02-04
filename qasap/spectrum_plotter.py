@@ -552,89 +552,102 @@ class SpectrumPlotter(QtWidgets.QWidget):
         self.read_instrument_bands()
 
         # Find title from file name
-        title = Path(self.fits_file).name
+        if self.fits_file:
+            title = Path(self.fits_file).name
+        else:
+            title = "QASAP - Load a Spectrum to Begin"
 
         # File handling based on flag
-        if self.file_flag == 1:
-            data = np.genfromtxt(self.fits_file, comments='#', delimiter='\t')
-            self.wav, self.spec, self.err = data[:, 0], data[:, 1], data[:, 2]
-        elif self.file_flag == 2:
-            with fits.open(self.fits_file) as hdul:
-                self.spec = hdul[0].data.flatten()
-                header = hdul[0].header
-                crpix1, crval1, cdelt1 = header.get('CRPIX1'), header.get('CRVAL1'), header.get('CDELT1')
-                self.wav = crval1 + (np.arange(len(self.spec)) - (crpix1 - 1)) * cdelt1
-                self.err = None  # No error spectrum
-        elif self.file_flag == 3:
-            print("Reading file flag 3") # [DEBUG]
-            print("self.fits_file:", self.fits_file) # [DEBUG]
-            data = np.loadtxt(self.fits_file)
-            print(data)
-            self.wav, self.spec, self.err = data[:, 0], data[:, 1], data[:, 2] if data.shape[1] > 2 else None
-        elif self.file_flag == 4:
-            data = np.loadtxt(self.fits_file)
-            self.wav, self.spec, self.err = data[:, 0], data[:, 2], data[:, 3]
-        elif self.file_flag == 5:
-            with fits.open(self.fits_file) as hdul:
-                data = hdul[1].data
-                self.wav = data['wave']
-                self.spec = data['flux']
-                self.err = None
-        elif self.file_flag == 6:
-            with fits.open(self.fits_file) as hdul:
-                data = hdul[1].data
-                self.wav = data[0][0]
-                self.spec = data[0][1]
-                self.err = None
-        elif self.file_flag == 7:
-            with fits.open(self.fits_file) as hdul:
-                hdul.info()
-                data = hdul['SPECTRUM'].data
-                self.wav = np.nan_to_num(data['wave'], nan=0.0)
-                wav_mid = np.nan_to_num(data['wave_grid_mid'], nan=0.0)
-                self.spec = np.nan_to_num(data['flux'], nan=0.0)
-                ivar = np.nan_to_num(data['ivar'], nan=0.0)
-                mask = np.nan_to_num(data['mask'], nan=0)
-                self.err = np.sqrt(np.where(ivar > 0, 1 / ivar, 0))
-        elif self.file_flag == 8:
-            with fits.open(self.fits_file) as hdul:
-                data = hdul['SPECTRUM'].data
-                self.wav = data['WAVE'][0]
-                self.spec = data['FLUX'][0]
-                self.err  = data['ERR'][0]
-        elif self.file_flag == 9:
-            with fits.open(self.fits_file) as hdul:
-                data = hdul[1].data
-                self.wav = data['WAVE'][0]
-                self.spec = data['FLUX'][0]
-                self.err  = data['ERR'][0]
-        elif self.file_flag == 10:
-            # Reading .sed or .txt format: 2-column ASCII with comment lines in nm
-            wavelengths = []
-            fluxes = []
-            with open(self.fits_file, 'r') as f:
-                for line in f:
-                    line = line.strip()
-                    if not line or line.startswith('#'):
-                        continue
-                    parts = line.split()
-                    if len(parts) >= 2:
-                        wavelengths.append(float(parts[0]))  # nm
-                        fluxes.append(float(parts[1]))       # arbitrary units
+        if self.fits_file:
+            if self.file_flag == 1:
+                data = np.genfromtxt(self.fits_file, comments='#', delimiter='\t')
+                self.wav, self.spec, self.err = data[:, 0], data[:, 1], data[:, 2]
+            elif self.file_flag == 2:
+                with fits.open(self.fits_file) as hdul:
+                    self.spec = hdul[0].data.flatten()
+                    header = hdul[0].header
+                    crpix1, crval1, cdelt1 = header.get('CRPIX1'), header.get('CRVAL1'), header.get('CDELT1')
+                    self.wav = crval1 + (np.arange(len(self.spec)) - (crpix1 - 1)) * cdelt1
+                    self.err = None  # No error spectrum
+            elif self.file_flag == 3:
+                print("Reading file flag 3") # [DEBUG]
+                print("self.fits_file:", self.fits_file) # [DEBUG]
+                data = np.loadtxt(self.fits_file)
+                print(data)
+                self.wav, self.spec, self.err = data[:, 0], data[:, 1], data[:, 2] if data.shape[1] > 2 else None
+            elif self.file_flag == 4:
+                data = np.loadtxt(self.fits_file)
+                self.wav, self.spec, self.err = data[:, 0], data[:, 2], data[:, 3]
+            elif self.file_flag == 5:
+                with fits.open(self.fits_file) as hdul:
+                    data = hdul[1].data
+                    self.wav = data['wave']
+                    self.spec = data['flux']
+                    self.err = None
+            elif self.file_flag == 6:
+                with fits.open(self.fits_file) as hdul:
+                    data = hdul[1].data
+                    self.wav = data[0][0]
+                    self.spec = data[0][1]
+                    self.err = None
+            elif self.file_flag == 7:
+                with fits.open(self.fits_file) as hdul:
+                    hdul.info()
+                    data = hdul['SPECTRUM'].data
+                    self.wav = np.nan_to_num(data['wave'], nan=0.0)
+                    wav_mid = np.nan_to_num(data['wave_grid_mid'], nan=0.0)
+                    self.spec = np.nan_to_num(data['flux'], nan=0.0)
+                    ivar = np.nan_to_num(data['ivar'], nan=0.0)
+                    mask = np.nan_to_num(data['mask'], nan=0)
+                    self.err = np.sqrt(np.where(ivar > 0, 1 / ivar, 0))
+            elif self.file_flag == 8:
+                with fits.open(self.fits_file) as hdul:
+                    data = hdul['SPECTRUM'].data
+                    self.wav = data['WAVE'][0]
+                    self.spec = data['FLUX'][0]
+                    self.err  = data['ERR'][0]
+            elif self.file_flag == 9:
+                with fits.open(self.fits_file) as hdul:
+                    data = hdul[1].data
+                    self.wav = data['WAVE'][0]
+                    self.spec = data['FLUX'][0]
+                    self.err  = data['ERR'][0]
+            elif self.file_flag == 10:
+                # Reading .sed or .txt format: 2-column ASCII with comment lines in nm
+                wavelengths = []
+                fluxes = []
+                with open(self.fits_file, 'r') as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith('#'):
+                            continue
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            wavelengths.append(float(parts[0]))  # nm
+                            fluxes.append(float(parts[1]))       # arbitrary units
 
-            self.wav = np.array(wavelengths)
-            self.spec = np.array(fluxes)
-            self.err = None  # No error spectrum
+                self.wav = np.array(wavelengths)
+                self.spec = np.array(fluxes)
+                self.err = None  # No error spectrum
+            else:
+                with fits.open(self.fits_file) as hdul:
+                    self.wav, self.spec, self.err = hdul[0].data, hdul[1].data, hdul[2].data
         else:
-            with fits.open(self.fits_file) as hdul:
-                self.wav, self.spec, self.err = hdul[0].data, hdul[1].data, hdul[2].data
+            # No file specified - initialize empty spectrum
+            self.wav = np.array([])
+            self.spec = np.array([])
+            self.err = None
 
         # print("wav:",self.wav)
         # print("spec:",self.spec)
 
         # Define initial plot limits
-        xlim = (self.wav.min(), self.wav.max())
-        ylim = (self.spec.min(), self.spec.max())
+        if len(self.wav) > 0 and len(self.spec) > 0:
+            xlim = (self.wav.min(), self.wav.max())
+            ylim = (self.spec.min(), self.spec.max())
+        else:
+            xlim = (0, 1)
+            ylim = (0, 1)
         redshift = self.redshift
         zoom_factor = self.zoom_factor
 
