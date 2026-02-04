@@ -552,6 +552,10 @@ class SpectrumPlotter(QtWidgets.QWidget):
         self.continuum_points_y = []
         self.item_tracker.clear_all()
         
+        # Reset item selection tracking
+        self.highlighted_item_ids.clear()
+        self.original_colors.clear()
+        
         # Reset other states
         self.smoothing_kernel = None
         self.smoothed_spectrum = None
