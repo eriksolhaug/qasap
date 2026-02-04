@@ -534,7 +534,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
         self.fitted_continuum_coeffs = None
         self.continuum_points_x = []
         self.continuum_points_y = []
-        self.item_tracker.clear_all_items()
+        self.item_tracker.clear_all()
         
         # Reset other states
         self.smoothing_kernel = None
