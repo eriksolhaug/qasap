@@ -391,8 +391,8 @@ class SpectrumPlotter(QtWidgets.QWidget):
         self.apply_button.move(20, 120)
         self.apply_button.clicked.connect(self.apply_changes)
         
-        # Create an "Open" button to load a new spectrum
-        self.open_button = QPushButton("Open", self)
+        # Create a "Load Spectrum..." button to load a new spectrum
+        self.open_button = QPushButton("Load Spectrum...", self)
         self.open_button.move(120, 120)
         self.open_button.clicked.connect(self.open_spectrum_file)
 
