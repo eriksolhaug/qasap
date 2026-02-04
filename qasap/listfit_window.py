@@ -8,6 +8,7 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QIntValidator, QIcon
 import numpy as np
 from scipy.optimize import curve_fit
+from qasap.ui_utils import get_qasap_icon
 
 
 class ListfitWindow(QtWidgets.QWidget):
@@ -28,9 +29,7 @@ class ListfitWindow(QtWidgets.QWidget):
         """Initialize UI"""
         self.setWindowTitle("QASAP - List Fit")
         # Load and set window icon
-        logo_path = Path(__file__).parent.parent / 'logo' / 'qasap_logo.png'
-        if logo_path.exists():
-            self.setWindowIcon(QIcon(str(logo_path)))
+        self.setWindowIcon(get_qasap_icon())
         self.setGeometry(500, 100, 700, 500)
         
         layout = QtWidgets.QHBoxLayout()

@@ -7,6 +7,7 @@ from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QLineEdit, QPushButton
 from PyQt5.QtGui import QIcon
 from .spectrum_plotter import SpectrumPlotter
+from qasap.ui_utils import get_qasap_icon
 
 class SpectrumPlotterApp(QWidget):
     def __init__(self, plotter):
@@ -17,9 +18,7 @@ class SpectrumPlotterApp(QWidget):
     def init_ui(self):
         self.setWindowTitle("QASAP - Quick Analysis of Spectra and Profiles")
         # Load and set window icon
-        logo_path = Path(__file__).parent.parent / 'logo' / 'qasap_logo.png'
-        if logo_path.exists():
-            self.setWindowIcon(QIcon(str(logo_path)))
+        self.setWindowIcon(get_qasap_icon())
         layout = QVBoxLayout()
 
         # File input

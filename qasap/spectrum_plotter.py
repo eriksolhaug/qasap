@@ -99,6 +99,7 @@ from datetime import datetime
 import ast
 import re
 from qasap.spectrum_io import SpectrumIO
+from qasap.ui_utils import get_qasap_icon
 
 # Suppress numexpr pandas UserWarning
 warnings.filterwarnings('ignore', category=UserWarning, module='pandas.core.computation.expressions')
@@ -114,8 +115,8 @@ class HelpWindow(QtWidgets.QDialog):
     """Help window displaying all keyboard shortcuts."""
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("QASAP - Keyboard Shortcuts Helper")
-        self.setWindowIcon(self.get_qasap_icon())
+        self.setWindowTitle("QASAP - Keyboard Shortcuts Help")
+        self.setWindowIcon(get_qasap_icon())
         self.setGeometry(200, 200, 800, 600)
         
         layout = QVBoxLayout()
@@ -335,17 +336,10 @@ class SpectrumPlotter(QtWidgets.QWidget):
         self.active_line_lists = []  # {linelist: LineList, color: str}
         self.current_linelist_lines = []  # Store plotted linelist lines for removal
 
-    def get_qasap_icon(self):
-        """Load and return the QASAP logo as a QIcon."""
-        logo_path = Path(__file__).parent.parent / 'logo' / 'qasap_logo.png'
-        if logo_path.exists():
-            return QIcon(str(logo_path))
-        return QIcon()  # Return empty icon if logo not found
-
     def init_controlpanel(self):
         # Set main window title and geometry
         self.setWindowTitle("QASAP - Control Panel")
-        self.setWindowIcon(self.get_qasap_icon())
+        self.setWindowIcon(get_qasap_icon())
         self.setGeometry(100, 100, 440, 200)
 
         # Create redshift input field

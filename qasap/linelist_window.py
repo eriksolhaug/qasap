@@ -8,6 +8,7 @@ from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QIcon
 from typing import List, Optional
 from .linelist import LineList, Line
+from qasap.ui_utils import get_qasap_icon
 
 
 class LineListWindow(QtWidgets.QWidget):
@@ -52,9 +53,7 @@ class LineListWindow(QtWidgets.QWidget):
         """Initialize the user interface with dual panels."""
         self.setWindowTitle("QASAP - Line List")
         # Load and set window icon
-        logo_path = Path(__file__).parent.parent / 'logo' / 'qasap_logo.png'
-        if logo_path.exists():
-            self.setWindowIcon(QIcon(str(logo_path)))
+        self.setWindowIcon(get_qasap_icon())
         self.setGeometry(100, 100, 700, 500)
 
         # Main layout - horizontal split
