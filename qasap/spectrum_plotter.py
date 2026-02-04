@@ -99,7 +99,6 @@ from datetime import datetime
 import ast
 import re
 from qasap.spectrum_io import SpectrumIO
-from qasap.ui_utils import get_qasap_icon
 
 # Suppress numexpr pandas UserWarning
 warnings.filterwarnings('ignore', category=UserWarning, module='pandas.core.computation.expressions')
@@ -115,6 +114,7 @@ class HelpWindow(QtWidgets.QDialog):
     """Help window displaying all keyboard shortcuts."""
     def __init__(self, parent=None):
         super().__init__(parent)
+        from qasap.ui_utils import get_qasap_icon
         self.setWindowTitle("QASAP - Keyboard Shortcuts Help")
         self.setWindowIcon(get_qasap_icon())
         self.setGeometry(200, 200, 800, 600)
@@ -222,6 +222,9 @@ class SpectrumPlotter(QtWidgets.QWidget):
         self.err_step = []
         self.x_data = []
         self.original_spec = []
+        self.data_loaded_from_gui = False  # Track if data was loaded via GUI
+        self.fig = None  # Will be created on first plot_spectrum() call
+        self.ax = None  # Will be created on first plot_spectrum() call
 
         self.gaussian_mode = False
         self.multi_gaussian_mode = False
@@ -338,6 +341,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
 
     def init_controlpanel(self):
         # Set main window title and geometry
+        from qasap.ui_utils import get_qasap_icon
         self.setWindowTitle("QASAP - Control Panel")
         self.setWindowIcon(get_qasap_icon())
         self.setGeometry(100, 100, 440, 200)
@@ -464,15 +468,22 @@ class SpectrumPlotter(QtWidgets.QWidget):
         from PyQt5.QtWidgets import QFileDialog
         from qasap.format_picker_dialog import FormatPickerDialog
         
-        file_path, _ = QFileDialog.getOpenFileName(
+        dialog = QFileDialog(
             self,
             "Open Spectrum File",
             "",
             "All Files (*);;FITS Files (*.fits *.fit);;ASCII Files (*.txt *.dat)"
         )
+        dialog.setFileMode(QFileDialog.ExistingFiles)
         
-        if not file_path:
+        if dialog.exec_() != QFileDialog.Accepted:
             return  # User cancelled
+        
+        files = dialog.selectedFiles()
+        if not files:
+            return
+        
+        file_path = files[0]
         
         try:
             # Auto-detect format
@@ -517,6 +528,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
         self.spec = spec
         self.err = err
         self.fits_file = fits_file
+        self.data_loaded_from_gui = True  # Mark that data was loaded from GUI
         
         # Reset smoothing and other processing
         self.smoothing_kernel = None
@@ -528,8 +540,9 @@ class SpectrumPlotter(QtWidgets.QWidget):
 
     def clear_plot_and_reset(self):
         """Clear the current plot and reset all fitting data and item tracker."""
-        # Clear the axis
-        self.ax.clear()
+        # Clear the axis if it exists
+        if self.ax is not None:
+            self.ax.clear()
         
         # Reset all fitting data
         self.fitted_gaussians = []
@@ -560,8 +573,8 @@ class SpectrumPlotter(QtWidgets.QWidget):
         else:
             title = "QASAP - Load a Spectrum to Begin"
 
-        # File handling based on flag
-        if self.fits_file:
+        # File handling based on flag - only read from file if not already loaded via GUI
+        if self.fits_file and not self.data_loaded_from_gui:
             if self.file_flag == 1:
                 data = np.genfromtxt(self.fits_file, comments='#', delimiter='\t')
                 self.wav, self.spec, self.err = data[:, 0], data[:, 1], data[:, 2]
@@ -633,9 +646,14 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 self.spec = np.array(fluxes)
                 self.err = None  # No error spectrum
             else:
-                with fits.open(self.fits_file) as hdul:
-                    self.wav, self.spec, self.err = hdul[0].data, hdul[1].data, hdul[2].data
-        else:
+                # Default FITS format
+                try:
+                    with fits.open(self.fits_file) as hdul:
+                        self.wav, self.spec, self.err = hdul[0].data, hdul[1].data, hdul[2].data
+                except (OSError, IndexError):
+                    # If read fails, data should have been loaded already
+                    pass
+        elif not self.fits_file:
             # No file specified - initialize empty spectrum
             self.wav = np.array([])
             self.spec = np.array([])
@@ -676,10 +694,17 @@ class SpectrumPlotter(QtWidgets.QWidget):
         # Set up x_data variable to store the currently plotted data (wavelength vs. velocity)
         self.x_data = self.wav # Default is wavelength
 
-        # Set up plot
-        self.fig, self.ax = plt.subplots(figsize=(10, 6))
-        # Adjust plot
-        self.fig.subplots_adjust(bottom=0.35)
+        # Set up plot - reuse existing figure if available, otherwise create new
+        if not hasattr(self, 'fig') or self.fig is None:
+            # Create new figure for first time
+            self.fig, self.ax = plt.subplots(figsize=(10, 6))
+            # Adjust plot
+            self.fig.subplots_adjust(bottom=0.35)
+        else:
+            # Reuse existing figure - clear axes
+            self.ax.clear()
+        
+        # Plot the spectrum
         self.step_spec, = self.ax.step(self.x_data, self.spec, label='Data', color='black', where='mid')
         self.line_spec, = self.ax.plot(self.x_data, self.spec, color='black', visible=False)
         
@@ -781,6 +806,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
 
     def read_instrument_bands(self):
         # Read instrument bands from file
+        self.band_ranges = []  # Reset to empty list
         bands_file = str(Path(self.resources_dir) / 'bands' / 'instrument_bands.txt')
         with open(bands_file, 'r') as file:
             for line in file:

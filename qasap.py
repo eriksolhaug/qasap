@@ -74,6 +74,10 @@ Examples:
     else:
         app = QtWidgets.QApplication.instance()
     
+    # Set application icon (shows in Dock on macOS)
+    from qasap.ui_utils import get_qasap_icon
+    app.setWindowIcon(get_qasap_icon())
+    
     # Load spectrum if provided
     wav = None
     spec = None
