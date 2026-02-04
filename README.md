@@ -120,10 +120,11 @@ Install QASAP as a Python package, which automatically creates the executable:
 pip install .
 
 # Or in development mode (allows you to modify the code and run it with the updated changes using the qasap command)
-pip install -e .
+pip install -e . --no-build-isolation
 ```
 
-Then run from anywhere:
+Now you can run QASAP from anywhere:
+
 ```bash
 qasap ~/path/to/spectrum.fits
 ```
