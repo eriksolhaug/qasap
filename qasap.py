@@ -175,10 +175,10 @@ Examples:
     # Load spectrum data if available
     if wav is not None and spec is not None:
         plotter.load_spectrum_data(wav, spec, err, meta, args.fits_file)
-        plotter.plot_spectrum()  # Create and show the plotting window
     
-    # Show control panel
+    # Show control panel and create the spectrum plot window
     plotter.show()
+    plotter.plot_spectrum()  # Always create the plot window, even if empty
     sys.exit(app.exec_())
 
 

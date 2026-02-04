@@ -10,14 +10,16 @@ from .spectrum_io import SpectrumIO
 from .spectrum_analysis import SpectrumAnalysis
 from .ui_components import SpectrumPlotter, SpectrumPlotterApp, LineListWindow
 
-# Import main function from root qasap module for entry point
+# Import main function from root qasap.py for entry point
 import sys
+import importlib.util
 from pathlib import Path
-_root = Path(__file__).parent.parent
-if str(_root) not in sys.path:
-    sys.path.insert(0, str(_root))
 
-from qasap import main
+_qasap_py = Path(__file__).parent.parent / 'qasap.py'
+spec = importlib.util.spec_from_file_location("qasap_main", _qasap_py)
+qasap_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(qasap_module)
+main = qasap_module.main
 
 __all__ = [
     'SpectrumIO',
