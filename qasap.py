@@ -52,7 +52,7 @@ Examples:
                         help='Line Spread Function: FWHM in km/s or path to LSF file')
     
     parser.add_argument('--version', action='version',
-                        version='QASAP v0.8')
+                        version='QASAP v0.10')
     
     args = parser.parse_args()
     
@@ -68,15 +68,21 @@ Examples:
         print()
         sys.exit(0)
     
-    # Load spectrum
+    # Initialize PyQt5 application first (needed for dialogs)
+    if not QtWidgets.QApplication.instance():
+        app = QtWidgets.QApplication(sys.argv)
+    else:
+        app = QtWidgets.QApplication.instance()
+    
+    # Load spectrum if provided
+    wav = None
+    spec = None
+    err = None
+    meta = {}
+    file_flag = 0
+    
     if args.fits_file:
         try:
-            # Initialize PyQt5 application first (needed for dialogs)
-            if not QtWidgets.QApplication.instance():
-                app = QtWidgets.QApplication(sys.argv)
-            else:
-                app = QtWidgets.QApplication.instance()
-            
             # Determine format and options
             if args.fmt:
                 fmt = args.fmt
@@ -134,9 +140,6 @@ Examples:
                 print(f"Shifted to rest-frame (z={z}): {wav_rest[0]:.2f} - {wav_rest[-1]:.2f} Å")
                 wav = wav_rest
             
-            # Launch interactive GUI plotter
-            print("\nLaunching interactive plotter...\n")
-            
             # Determine file_flag from format
             file_flag_map = {
                 'ascii:2col': 10,
@@ -149,26 +152,34 @@ Examples:
             }
             file_flag = file_flag_map.get(fmt, 0)
             
-            plotter = SpectrumPlotter(
-                fits_file=args.fits_file,
-                redshift=args.redshift,
-                zoom_factor=0.1,
-                file_flag=file_flag,
-                lsf=args.lsf or "10"
-            )
-            # Show control panel and create the spectrum plot
-            plotter.show()
-            plotter.plot_spectrum()  # Create and show the plotting window
-            sys.exit(app.exec_())
+            print("\nLaunching interactive plotter...\n")
             
         except Exception as e:
-            print(f"Error: {e}")
+            print(f"Error loading spectrum: {e}")
             import traceback
             traceback.print_exc()
             sys.exit(1)
     else:
-        parser.print_help()
-        sys.exit(1)
+        print("No spectrum file specified. Starting QASAP with empty plotter.")
+        print("Use the 'Open' button in the control panel to load a spectrum.\n")
+    
+    # Launch interactive GUI plotter
+    plotter = SpectrumPlotter(
+        fits_file=args.fits_file,
+        redshift=args.redshift,
+        zoom_factor=0.1,
+        file_flag=file_flag,
+        lsf=args.lsf or "10"
+    )
+    
+    # Load spectrum data if available
+    if wav is not None and spec is not None:
+        plotter.load_spectrum_data(wav, spec, err, meta, args.fits_file)
+        plotter.plot_spectrum()  # Create and show the plotting window
+    
+    # Show control panel
+    plotter.show()
+    sys.exit(app.exec_())
 
 
 if __name__ == '__main__':
