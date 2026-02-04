@@ -2033,23 +2033,16 @@ class SpectrumPlotter(QtWidgets.QWidget):
         if line_obj:
             # Store original color and change to royal blue
             original_color = line_obj.get_color()
-            self.original_colors[item_id] = {'type': 'line', 'color': original_color}
+            self.original_colors[item_id] = original_color
             line_obj.set_color('royalblue')
             line_obj.set_linewidth(2.5)
         
         # Handle patch objects (continuum regions)
         patch_obj = item_info.get('patch_obj')
         if patch_obj:
-            # Store original facecolor and edgecolor
-            original_facecolor = patch_obj.get_facecolor()
-            original_edgecolor = patch_obj.get_edgecolor()
-            original_alpha = patch_obj.get_alpha()
-            self.original_colors[item_id] = {
-                'type': 'patch',
-                'facecolor': original_facecolor,
-                'edgecolor': original_edgecolor,
-                'alpha': original_alpha
-            }
+            # Store original color and change to royal blue
+            original_color = patch_obj.get_edgecolor()
+            self.original_colors[item_id] = original_color
             patch_obj.set_edgecolor('royalblue')
             patch_obj.set_linewidth(2.5)
         
@@ -2062,27 +2055,19 @@ class SpectrumPlotter(QtWidgets.QWidget):
             if item_id in self.item_id_map:
                 item_info = self.item_id_map[item_id]
                 
-                if item_id not in self.original_colors:
-                    continue
-                
-                color_info = self.original_colors[item_id]
-                
                 # Restore line objects (Gaussians, Voigts)
-                if color_info.get('type') == 'line':
-                    line_obj = item_info.get('line_obj')
-                    if line_obj:
-                        line_obj.set_color(color_info['color'])
-                        line_obj.set_linewidth(1)  # Restore normal width
+                line_obj = item_info.get('line_obj')
+                if line_obj and item_id in self.original_colors:
+                    original_color = self.original_colors[item_id]
+                    line_obj.set_color(original_color)
+                    line_obj.set_linewidth(1)  # Restore normal width
                 
                 # Restore patch objects (continuum regions)
-                elif color_info.get('type') == 'patch':
-                    patch_obj = item_info.get('patch_obj')
-                    if patch_obj:
-                        patch_obj.set_facecolor(color_info['facecolor'])
-                        patch_obj.set_edgecolor(color_info['edgecolor'])
-                        if color_info.get('alpha') is not None:
-                            patch_obj.set_alpha(color_info['alpha'])
-                        patch_obj.set_linewidth(1)  # Restore normal width
+                patch_obj = item_info.get('patch_obj')
+                if patch_obj and item_id in self.original_colors:
+                    original_color = self.original_colors[item_id]
+                    patch_obj.set_edgecolor(original_color)
+                    patch_obj.set_linewidth(1)  # Restore normal width
         
         # Clear tracking variables
         self.highlighted_item_ids.clear()
@@ -2098,29 +2083,26 @@ class SpectrumPlotter(QtWidgets.QWidget):
         self.highlighted_item_ids.discard(item_id)
         
         # Restore just this item to its original color
-        if item_id in self.item_id_map and item_id in self.original_colors:
+        if item_id in self.item_id_map:
             item_info = self.item_id_map[item_id]
-            color_info = self.original_colors[item_id]
             
             # Restore line objects (Gaussians, Voigts)
-            if color_info.get('type') == 'line':
-                line_obj = item_info.get('line_obj')
-                if line_obj:
-                    line_obj.set_color(color_info['color'])
-                    line_obj.set_linewidth(1)  # Restore normal width
+            line_obj = item_info.get('line_obj')
+            if line_obj and item_id in self.original_colors:
+                original_color = self.original_colors[item_id]
+                line_obj.set_color(original_color)
+                line_obj.set_linewidth(1)  # Restore normal width
             
             # Restore patch objects (continuum regions)
-            elif color_info.get('type') == 'patch':
-                patch_obj = item_info.get('patch_obj')
-                if patch_obj:
-                    patch_obj.set_facecolor(color_info['facecolor'])
-                    patch_obj.set_edgecolor(color_info['edgecolor'])
-                    if color_info.get('alpha') is not None:
-                        patch_obj.set_alpha(color_info['alpha'])
-                    patch_obj.set_linewidth(1)  # Restore normal width
+            patch_obj = item_info.get('patch_obj')
+            if patch_obj and item_id in self.original_colors:
+                original_color = self.original_colors[item_id]
+                patch_obj.set_edgecolor(original_color)
+                patch_obj.set_linewidth(1)  # Restore normal width
             
             # Clean up tracking for this item
-            del self.original_colors[item_id]
+            if item_id in self.original_colors:
+                del self.original_colors[item_id]
         
         plt.draw()
         
