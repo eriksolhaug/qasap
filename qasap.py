@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """
 QASAP - Quick & Advanced Spectrum Analysis Package
-Version 0.9
+Version 0.10
 
 Interactive spectral analysis tool with intelligent file format detection.
 Modular architecture with spectrum I/O and analysis functions.

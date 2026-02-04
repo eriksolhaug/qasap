@@ -8,12 +8,12 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
 
 setup(
     name="qasap",
-    version="0.5.0",
+    version="0.9.0",
     author="Erik Solhaug",
     description="Quick Analysis of Spectra and Profiles - Interactive spectral analysis tool",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/qasap",
+    url="https://github.com/eriksolhaug/qasap",
     packages=find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",
