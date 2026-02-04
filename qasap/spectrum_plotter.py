@@ -76,6 +76,7 @@ import argparse
 import os
 import sys
 import warnings
+from pathlib import Path
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -326,7 +327,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
         self.help_window = None
         
         # Line List Selector
-        resources_dir = os.path.join(os.path.dirname(__file__), '..', 'resources')
+        resources_dir = str(Path(__file__).parent.parent / 'resources')
         self.line_list_selector = None  # Will be created on demand
         self.resources_dir = resources_dir
         self.active_line_lists = []  # {linelist: LineList, color: str}
@@ -456,7 +457,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
         self.read_instrument_bands()
 
         # Find title from file name
-        title = os.path.basename(self.fits_file)
+        title = Path(self.fits_file).name
 
         # File handling based on flag
         if self.file_flag == 1:
@@ -626,7 +627,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
 
     def read_lines(self):
         # Read spectral lines from file
-        line_file = os.path.join(self.resources_dir, 'linelist', 'emlines.txt')
+        line_file = str(Path(self.resources_dir) / 'linelist' / 'emlines.txt')
         line_ids = []
         line_wavelengths = []
         with open(line_file, 'r') as file:
@@ -644,7 +645,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
     
     def read_osc(self):
         # Read spectral lines from file
-        line_file = os.path.join(self.resources_dir, 'linelist', 'emlines_osc.txt')
+        line_file = str(Path(self.resources_dir) / 'linelist' / 'emlines_osc.txt')
         line_ids = []
         line_wavelengths = []
         line_osc = []
@@ -661,7 +662,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
 
     def read_instrument_bands(self):
         # Read instrument bands from file
-        bands_file = os.path.join(self.resources_dir, 'bands', 'instrument_bands.txt')
+        bands_file = str(Path(self.resources_dir) / 'bands' / 'instrument_bands.txt')
         with open(bands_file, 'r') as file:
             for line in file:
                 parts = line.strip().split(',')
@@ -1497,12 +1498,12 @@ class SpectrumPlotter(QtWidgets.QWidget):
 
     def toggle_filter_bands(self, index):
         """Toggle the display of filter bands and their labels on the plot."""
-        base_dir = os.path.dirname(os.path.abspath(__file__))
+        base_dir = Path(__file__).parent
         directories = [
-            os.path.join(base_dir, 'throughputs/WFC3_UVIS/'),
-            os.path.join(base_dir, 'throughputs/WFC3_IR/'),
-            os.path.join(base_dir, 'throughputs/ACS/'),
-            os.path.join(base_dir, 'throughputs/NIRCam/')
+            str(base_dir / 'throughputs/WFC3_UVIS/'),
+            str(base_dir / 'throughputs/WFC3_IR/'),
+            str(base_dir / 'throughputs/ACS/'),
+            str(base_dir / 'throughputs/NIRCam/')
         ]
 
         # Ensure index is within bounds
@@ -1553,7 +1554,7 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 filter_name = file_name.split('.')[0]
                 
                 # Load data from the file
-                file_path = os.path.join(throughput_dir, file_name)
+                file_path = str(Path(throughput_dir) / file_name)
                 data = np.loadtxt(file_path, skiprows=1)
                 
                 # Assuming the first column is wavelength and the second column is throughput
