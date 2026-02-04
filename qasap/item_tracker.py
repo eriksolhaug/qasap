@@ -2,8 +2,10 @@
 ItemTracker - Window to track and manage plotted spectrum features
 """
 
+from pathlib import Path
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtGui import QIcon
 
 
 class ColorBoxDelegate(QtWidgets.QStyledItemDelegate):
@@ -34,7 +36,11 @@ class ItemTracker(QtWidgets.QWidget):
     
     def init_ui(self):
         """Initialize UI"""
-        self.setWindowTitle("Item Tracker")
+        self.setWindowTitle("QASAP - Item Tracker")
+        # Load and set window icon
+        logo_path = Path(__file__).parent.parent / 'logo' / 'qasap_logo.png'
+        if logo_path.exists():
+            self.setWindowIcon(QIcon(str(logo_path)))
         self.setGeometry(100, 700, 600, 350)
         
         layout = QtWidgets.QVBoxLayout()

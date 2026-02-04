@@ -2,9 +2,10 @@
 ListfitWindow - Multi-component spectrum fitting dialog
 """
 
+from pathlib import Path
 from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QIntValidator
+from PyQt5.QtGui import QIntValidator, QIcon
 import numpy as np
 from scipy.optimize import curve_fit
 
@@ -25,7 +26,11 @@ class ListfitWindow(QtWidgets.QWidget):
     
     def init_ui(self):
         """Initialize UI"""
-        self.setWindowTitle("List Fit - Component Selection")
+        self.setWindowTitle("QASAP - List Fit")
+        # Load and set window icon
+        logo_path = Path(__file__).parent.parent / 'logo' / 'qasap_logo.png'
+        if logo_path.exists():
+            self.setWindowIcon(QIcon(str(logo_path)))
         self.setGeometry(500, 100, 700, 500)
         
         layout = QtWidgets.QHBoxLayout()

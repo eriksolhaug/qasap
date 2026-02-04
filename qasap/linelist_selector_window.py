@@ -2,8 +2,10 @@
 Line List Selector Window for QASAP
 """
 
+from pathlib import Path
 from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtCore import pyqtSignal, Qt
+from PyQt5.QtGui import QIcon
 from .linelist import LineList, get_available_line_lists
 
 
@@ -21,7 +23,11 @@ class LineListSelector(QtWidgets.QWidget):
     
     def init_ui(self):
         """Initialize the UI"""
-        self.setWindowTitle("Line Lists")
+        self.setWindowTitle("QASAP - Line Lists")
+        # Load and set window icon
+        logo_path = Path(__file__).parent.parent / 'logo' / 'qasap_logo.png'
+        if logo_path.exists():
+            self.setWindowIcon(QIcon(str(logo_path)))
         self.setGeometry(1100, 100, 500, 600)
         
         layout = QtWidgets.QVBoxLayout()

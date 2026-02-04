@@ -2,8 +2,10 @@
 SpectrumPlotterApp - Application wrapper for SpectrumPlotter
 """
 
+from pathlib import Path
 from PyQt5 import QtWidgets, QtCore
-from PyQt5.QtWidgets import QWidget
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QLineEdit, QPushButton
+from PyQt5.QtGui import QIcon
 from .spectrum_plotter import SpectrumPlotter
 
 class SpectrumPlotterApp(QWidget):
@@ -13,7 +15,11 @@ class SpectrumPlotterApp(QWidget):
         self.init_ui()
 
     def init_ui(self):
-        self.setWindowTitle("QASAP - Quick Analysis of Spectra and Profiles (v0.5)")
+        self.setWindowTitle("QASAP - Quick Analysis of Spectra and Profiles")
+        # Load and set window icon
+        logo_path = Path(__file__).parent.parent / 'logo' / 'qasap_logo.png'
+        if logo_path.exists():
+            self.setWindowIcon(QIcon(str(logo_path)))
         layout = QVBoxLayout()
 
         # File input

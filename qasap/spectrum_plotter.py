@@ -93,7 +93,7 @@ from lmfit.models import PolynomialModel
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton
 from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtCore import pyqtSignal, Qt
-from PyQt5.QtGui import QDoubleValidator, QIntValidator
+from PyQt5.QtGui import QDoubleValidator, QIntValidator, QIcon
 from PyQt5.QtWidgets import QFileDialog
 from datetime import datetime
 import ast
@@ -114,7 +114,8 @@ class HelpWindow(QtWidgets.QDialog):
     """Help window displaying all keyboard shortcuts."""
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("QASAP Keyboard Shortcuts Help")
+        self.setWindowTitle("QASAP - Keyboard Shortcuts Helper")
+        self.setWindowIcon(self.get_qasap_icon())
         self.setGeometry(200, 200, 800, 600)
         
         layout = QVBoxLayout()
@@ -334,9 +335,17 @@ class SpectrumPlotter(QtWidgets.QWidget):
         self.active_line_lists = []  # {linelist: LineList, color: str}
         self.current_linelist_lines = []  # Store plotted linelist lines for removal
 
+    def get_qasap_icon(self):
+        """Load and return the QASAP logo as a QIcon."""
+        logo_path = Path(__file__).parent.parent / 'logo' / 'qasap_logo.png'
+        if logo_path.exists():
+            return QIcon(str(logo_path))
+        return QIcon()  # Return empty icon if logo not found
+
     def init_controlpanel(self):
         # Set main window title and geometry
-        self.setWindowTitle("QASAP Control Panel")
+        self.setWindowTitle("QASAP - Control Panel")
+        self.setWindowIcon(self.get_qasap_icon())
         self.setGeometry(100, 100, 440, 200)
 
         # Create redshift input field
@@ -727,6 +736,14 @@ class SpectrumPlotter(QtWidgets.QWidget):
         self.item_tracker.estimate_redshift.connect(self.on_estimate_redshift_from_tracker)
         self.item_tracker.setGeometry(1100, 700, 650, 350)  # Position on the right side
         self.item_tracker.show()
+
+        # Set icon for the matplotlib figure window
+        if hasattr(self.fig, 'canvas') and hasattr(self.fig.canvas, 'manager'):
+            if hasattr(self.fig.canvas.manager, 'window'):
+                logo_path = Path(__file__).parent.parent / 'logo' / 'qasap_logo.png'
+                if logo_path.exists():
+                    self.fig.canvas.manager.window.setWindowIcon(QIcon(str(logo_path)))
+                self.fig.canvas.manager.window.setWindowTitle("QASAP - Spectrum Viewer")
 
         plt.show()
 

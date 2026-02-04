@@ -2,8 +2,10 @@
 LineListWindow - Line list dialog window with dual-panel interface
 """
 
+from pathlib import Path
 from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtGui import QIcon
 from typing import List, Optional
 from .linelist import LineList, Line
 
@@ -48,7 +50,11 @@ class LineListWindow(QtWidgets.QWidget):
 
     def init_ui(self):
         """Initialize the user interface with dual panels."""
-        self.setWindowTitle("Line List Selector")
+        self.setWindowTitle("QASAP - Line List")
+        # Load and set window icon
+        logo_path = Path(__file__).parent.parent / 'logo' / 'qasap_logo.png'
+        if logo_path.exists():
+            self.setWindowIcon(QIcon(str(logo_path)))
         self.setGeometry(100, 100, 700, 500)
 
         # Main layout - horizontal split
