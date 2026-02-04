@@ -60,8 +60,7 @@ cd qasap # This is the repo you cloned from github
 
 # Install dependencies
 pip install -r requirements.txt
-
-# Or install with conda
+# OR install requirements using conda
 conda install numpy scipy matplotlib astropy pandas lmfit pyqt emcee corner
 
 # Run QASAP
