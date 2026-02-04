@@ -119,7 +119,7 @@ Install QASAP as a Python package, which automatically creates the executable:
 # From inside the qasap directory
 pip install .
 
-# Or in development mode (changes are reflected immediately)
+# Or in development mode (allows you to modify the code and run it with the updated changes using the qasap command)
 pip install -e .
 ```
 
