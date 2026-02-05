@@ -326,7 +326,6 @@ class SpectrumPlotter(QtWidgets.QWidget):
         self.item_id_counter = 0
         self.item_id_map = {}  # Maps item_id to {'type': 'gaussian', 'fit': fit_dict, ...}
         self.highlighted_item_ids = set()  # Track all currently highlighted items
-        self.original_colors = {}  # Store original colors for restoration: {item_id: color}
         self.redshift_selected_line = None  # Track the line object selected for redshift
         
         # Help Window
@@ -554,7 +553,6 @@ class SpectrumPlotter(QtWidgets.QWidget):
         
         # Reset item selection tracking
         self.highlighted_item_ids.clear()
-        self.original_colors.clear()
         
         # Reset other states
         self.smoothing_kernel = None
@@ -1920,15 +1918,16 @@ class SpectrumPlotter(QtWidgets.QWidget):
             print('Exiting redshift estimation mode.')
     
     def restore_redshift_highlight(self):
-        """Restore the original color of the line selected for redshift mode"""
+        """Restore the original color and linewidth of the line selected for redshift mode"""
         if self.redshift_selected_line:
-            # Restore to original color (red for Gaussian, orange for Voigt typically)
-            # Check the color from the item_id_map to get the true original
+            # Restore to original color and linewidth
+            # Check the color and linewidth from the item_id_map to get the true originals
             for item_info in self.item_id_map.values():
                 if item_info.get('line_obj') == self.redshift_selected_line:
                     original_color = item_info.get('color', 'red')
+                    original_linewidth = item_info.get('original_linewidth', 1)
                     self.redshift_selected_line.set_color(original_color)
-                    self.redshift_selected_line.set_linewidth(1)
+                    self.redshift_selected_line.set_linewidth(original_linewidth)
                     break
             self.redshift_selected_line = None
             plt.draw()
@@ -1937,6 +1936,14 @@ class SpectrumPlotter(QtWidgets.QWidget):
         """Register an item with the tracker"""
         item_id = f"{item_type}_{self.item_id_counter}"
         self.item_id_counter += 1
+        
+        # Store original linewidth for restoration on deselection
+        original_linewidth = None
+        if line_obj:
+            original_linewidth = line_obj.get_linewidth()
+        elif patch_obj:
+            original_linewidth = patch_obj.get_linewidth()
+        
         self.item_id_map[item_id] = {
             'type': item_type,
             'fit_dict': fit_dict,
@@ -1945,7 +1952,8 @@ class SpectrumPlotter(QtWidgets.QWidget):
             'name': name,
             'position': position,
             'color': color,
-            'bounds': bounds
+            'bounds': bounds,
+            'original_linewidth': original_linewidth
         }
         self.item_tracker.add_item(item_id, item_type, name, position=position, color=color, line_obj=line_obj)
         return item_id
@@ -1959,8 +1967,6 @@ class SpectrumPlotter(QtWidgets.QWidget):
         # Clean up highlighting tracking if this item was highlighted
         if item_id in self.highlighted_item_ids:
             self.highlighted_item_ids.discard(item_id)
-        if item_id in self.original_colors:
-            del self.original_colors[item_id]
     
     def show_item_tracker(self):
         """Show the item tracker window"""
@@ -2031,81 +2037,72 @@ class SpectrumPlotter(QtWidgets.QWidget):
         # Handle line objects (Gaussians, Voigts)
         line_obj = item_info.get('line_obj')
         if line_obj:
-            # Store original color and change to royal blue
-            original_color = line_obj.get_color()
-            self.original_colors[item_id] = original_color
+            # Change to royal blue (original color stored in item_id_map)
             line_obj.set_color('royalblue')
             line_obj.set_linewidth(2.5)
         
         # Handle patch objects (continuum regions)
         patch_obj = item_info.get('patch_obj')
         if patch_obj:
-            # Store original color and change to royal blue
-            original_color = patch_obj.get_edgecolor()
-            self.original_colors[item_id] = original_color
+            # Change edge color to royal blue (original color stored in item_id_map)
             patch_obj.set_edgecolor('royalblue')
             patch_obj.set_linewidth(2.5)
         
-        plt.draw()
+        self.fig.canvas.draw_idle()
     
     def on_item_deselected_from_tracker(self):
-        """Handle item deselection from tracker - restore original color for all items"""
-        # Restore all highlighted items to their original colors
+        """Handle item deselection from tracker - restore original color and linewidth for all items"""
+        # Restore all highlighted items to their original colors and linewidths
         for item_id in self.highlighted_item_ids:
             if item_id in self.item_id_map:
                 item_info = self.item_id_map[item_id]
+                # Get original color and linewidth from item_id_map
+                original_color = item_info.get('color', 'gray')
+                original_linewidth = item_info.get('original_linewidth', 1)
                 
                 # Restore line objects (Gaussians, Voigts)
                 line_obj = item_info.get('line_obj')
-                if line_obj and item_id in self.original_colors:
-                    original_color = self.original_colors[item_id]
+                if line_obj:
                     line_obj.set_color(original_color)
-                    line_obj.set_linewidth(1)  # Restore normal width
+                    line_obj.set_linewidth(original_linewidth)
                 
                 # Restore patch objects (continuum regions)
                 patch_obj = item_info.get('patch_obj')
-                if patch_obj and item_id in self.original_colors:
-                    original_color = self.original_colors[item_id]
+                if patch_obj:
                     patch_obj.set_edgecolor(original_color)
-                    patch_obj.set_linewidth(1)  # Restore normal width
+                    patch_obj.set_linewidth(original_linewidth)
         
         # Clear tracking variables
         self.highlighted_item_ids.clear()
-        self.original_colors.clear()
-        plt.draw()
+        self.fig.canvas.draw_idle()
     
     def on_item_individually_deselected_from_tracker(self, item_id):
-        """Handle individual item deselection when multiple items are selected"""
+        """Handle individual item deselection - restore original color and linewidth for that item"""
+        if item_id in self.highlighted_item_ids:
+            self.highlighted_item_ids.remove(item_id)
+        
         if item_id not in self.item_id_map:
             return
         
-        # Remove from highlighted set
-        self.highlighted_item_ids.discard(item_id)
+        item_info = self.item_id_map[item_id]
+        # Get original color and linewidth from item_id_map
+        original_color = item_info.get('color', 'gray')
+        original_linewidth = item_info.get('original_linewidth', 1)
         
-        # Restore just this item to its original color
-        if item_id in self.item_id_map:
-            item_info = self.item_id_map[item_id]
-            
-            # Restore line objects (Gaussians, Voigts)
-            line_obj = item_info.get('line_obj')
-            if line_obj and item_id in self.original_colors:
-                original_color = self.original_colors[item_id]
-                line_obj.set_color(original_color)
-                line_obj.set_linewidth(1)  # Restore normal width
-            
-            # Restore patch objects (continuum regions)
-            patch_obj = item_info.get('patch_obj')
-            if patch_obj and item_id in self.original_colors:
-                original_color = self.original_colors[item_id]
-                patch_obj.set_edgecolor(original_color)
-                patch_obj.set_linewidth(1)  # Restore normal width
-            
-            # Clean up tracking for this item
-            if item_id in self.original_colors:
-                del self.original_colors[item_id]
+        # Restore line objects (Gaussians, Voigts)
+        line_obj = item_info.get('line_obj')
+        if line_obj:
+            line_obj.set_color(original_color)
+            line_obj.set_linewidth(original_linewidth)
         
-        plt.draw()
+        # Restore patch objects (continuum regions)
+        patch_obj = item_info.get('patch_obj')
+        if patch_obj:
+            patch_obj.set_edgecolor(original_color)
+            patch_obj.set_linewidth(original_linewidth)
         
+        self.fig.canvas.draw_idle()
+    
     def on_estimate_redshift_from_tracker(self, item_id):
         """Handle estimate redshift action from ItemTracker context menu"""
         if item_id not in self.item_id_map:
@@ -3136,12 +3133,22 @@ class SpectrumPlotter(QtWidgets.QWidget):
                     print("No continuum specified. Unable to calculate EW.")
 
         if event.key == 'm':
-            self.continuum_mode = True
-            self.label_poly_order.show()
-            self.input_poly_order.show()
-            self.setGeometry(100, 100, 440, 250)  # Expand window to fit poly order field
-            print("Continuum fitting mode: Use the spacebar to define regions.")
-            print(f"Current polynomial order: {self.poly_order}")
+            if self.continuum_mode:
+                # Already in continuum mode, so pressing 'm' again exits it
+                self.continuum_mode = False
+                self.label_poly_order.hide()
+                self.input_poly_order.hide()
+                self.setGeometry(100, 100, 440, 200)  # Restore original window size
+                self.continuum_regions = []  # Clear any defined regions
+                print('Exiting continuum mode.')
+            else:
+                # Enter continuum mode
+                self.continuum_mode = True
+                self.label_poly_order.show()
+                self.input_poly_order.show()
+                self.setGeometry(100, 100, 440, 250)  # Expand window to fit poly order field
+                print("Continuum fitting mode: Use the spacebar to define regions.")
+                print(f"Current polynomial order: {self.poly_order}")
 
         if event.key == 'enter' and self.continuum_mode:
             # Update polynomial order from input field
@@ -4866,15 +4873,29 @@ class SpectrumPlotter(QtWidgets.QWidget):
         else:
             result = composite_model.fit(y_fit, x=x_fit)
         
-        if not result.success:
+        # Check if fit succeeded OR if it converged but just failed on error estimation
+        fit_converged = result.success or (result.nfree > 0 and result.ndata > result.nfree)
+        
+        if not fit_converged:
             print(f"Fit failed: {result.message}")
             return
+        
+        # Print warning if fit converged but error bars couldn't be estimated
+        if not result.success:
+            print("Warning: Fit converged but error-bar estimation failed (tolerance too small).")
+            print("This is often due to numerical precision limits. The fit parameters are still valid.")
         
         print("Listfit completed successfully!")
         print(result.fit_report())
         
+        # Check fit quality and warn if poor
+        self._check_listfit_quality(result, y_fit)
+        
+        # Filter out mask features before plotting (they're not actual components to plot)
+        components_to_plot = [comp for comp in components if comp['type'] != 'mask_feature']
+        
         # Plot the components
-        self.plot_listfit_components(result, components, x_fit, y_fit, err_fit, left_bound, right_bound)
+        self.plot_listfit_components(result, components_to_plot, x_fit, y_fit, err_fit, left_bound, right_bound)
         
         # Update residual display if shown
         if self.is_residual_shown:
@@ -4900,22 +4921,46 @@ class SpectrumPlotter(QtWidgets.QWidget):
         plt.draw()
 
     def build_composite_model(self, components, x_fit, y_fit, err_fit):
-        """Build a composite lmfit Model from component list"""
+        """Build a composite lmfit Model from component list with improved initial guesses"""
+        from scipy.signal import find_peaks
+        
         model = None
         gauss_count = 0
         voigt_count = 0
         poly_count = 0
         
+        # Create continuum mask for polynomial fitting (avoid line profiles)
+        continuum_mask = self._identify_continuum_regions(x_fit, y_fit)
+        
+        # Extract mask features (wavelength ranges to exclude from polynomial guess)
+        mask_features = [comp for comp in components if comp['type'] == 'mask_feature']
+        
+        # Find all peaks upfront for multi-component Gaussian/Voigt fitting
+        peaks, properties = find_peaks(np.abs(y_fit), height=np.std(y_fit) * 0.3)
+        
+        # Sort peaks by prominence (strength) - use height from find_peaks
+        if len(peaks) > 0:
+            # Sort descending by peak height
+            sorted_indices = np.argsort(-properties['peak_heights'])
+            peaks = peaks[sorted_indices]
+        
+        peak_index_for_component = 0  # Track which peak to use next
+        
         for comp in components:
+            # Skip mask features - they're not fitted, only used for polynomial guess
+            if comp['type'] == 'mask_feature':
+                continue
+            
             if comp['type'] == 'gaussian':
-                # Find reasonable initial guess
-                peak_idx = np.argmax(np.abs(y_fit))
-                peak_y = y_fit[peak_idx]
-                peak_x = x_fit[peak_idx]
-                
-                amp_guess = peak_y
-                center_guess = peak_x
-                sigma_guess = (x_fit[-1] - x_fit[0]) / 10.0
+                # Assign this Gaussian to the next available peak
+                if peak_index_for_component < len(peaks):
+                    amp_guess, center_guess, sigma_guess = self._estimate_gaussian_params(
+                        x_fit, y_fit, peak_idx=peaks[peak_index_for_component]
+                    )
+                    peak_index_for_component += 1
+                else:
+                    # Fallback if we run out of detected peaks
+                    amp_guess, center_guess, sigma_guess = self._estimate_gaussian_params(x_fit, y_fit)
                 
                 prefix = f'g{gauss_count}_'
                 gauss_model = Model(self.gaussian, prefix=prefix, independent_vars=['x'])
@@ -4930,20 +4975,18 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 gauss_count += 1
             
             elif comp['type'] == 'voigt':
-                # Find reasonable initial guess
-                peak_idx = np.argmax(np.abs(y_fit))
-                peak_y = y_fit[peak_idx]
-                peak_x = x_fit[peak_idx]
+                # Assign this Voigt to the next available peak
+                if peak_index_for_component < len(peaks):
+                    amp_guess, center_guess, sigma_guess = self._estimate_gaussian_params(
+                        x_fit, y_fit, peak_idx=peaks[peak_index_for_component]
+                    )
+                    peak_index_for_component += 1
+                else:
+                    # Fallback if we run out of detected peaks
+                    amp_guess, center_guess, sigma_guess = self._estimate_gaussian_params(x_fit, y_fit)
                 
-                amp_guess = peak_y
-                center_guess = peak_x
-                sigma_guess = (x_fit[-1] - x_fit[0]) / 10.0
-                gamma_guess = sigma_guess / 2.0
+                gamma_guess = sigma_guess * 0.5  # Reasonable starting point for gamma
                 
-                prefix = f'v{voigt_count}_'
-                voigt_model = Model(self.voigt, prefix=prefix, independent_vars=['x'])
-                voigt_model.set_param_hint(f'{prefix}amp', value=amp_guess)
-                voigt_model.set_param_hint(f'{prefix}center', value=center_guess)
                 prefix = f'v{voigt_count}_'
                 voigt_model = Model(self.voigt, prefix=prefix, independent_vars=['x'])
                 voigt_model.set_param_hint(f'{prefix}amp', value=amp_guess)
@@ -4963,11 +5006,13 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 # Create polynomial model using lmfit's built-in PolynomialModel
                 poly_model = PolynomialModel(degree=order, prefix=prefix, independent_vars=['x'])
                 
-                # Set initial guesses from polyfit
-                coeffs = np.polyfit(x_fit, y_fit, order)
+                # Use median-filtered data to estimate polynomial (featureless continuum)
+                # Pass mask features to exclude their regions from polynomial guess
+                poly_coeffs = self._estimate_polynomial_coefficients(x_fit, y_fit, order, continuum_mask, mask_features)
+                
                 for i in range(order + 1):
                     param_name = f'{prefix}c{i}'
-                    poly_model.set_param_hint(param_name, value=coeffs[i])
+                    poly_model.set_param_hint(param_name, value=poly_coeffs[i])
                 
                 if model is None:
                     model = poly_model
@@ -4977,9 +5022,275 @@ class SpectrumPlotter(QtWidgets.QWidget):
         
         return model
 
+    def _estimate_polynomial_coefficients(self, x_fit, y_fit, order, continuum_mask, mask_features=None):
+        """Estimate polynomial coefficients using robust iterative sigma-clipping on median-filtered data
+        
+        Args:
+            x_fit: x data
+            y_fit: y data
+            order: polynomial order
+            continuum_mask: boolean mask of continuum regions
+            mask_features: list of {'min_lambda': x1, 'max_lambda': x2} to exclude from guess
+        """
+        from scipy.ndimage import median_filter
+        
+        # Create mask for user-specified wavelength ranges to exclude
+        exclude_mask = np.zeros(len(x_fit), dtype=bool)
+        if mask_features:
+            for mask_feat in mask_features:
+                min_lambda = mask_feat.get('min_lambda')
+                max_lambda = mask_feat.get('max_lambda')
+                if min_lambda is not None and max_lambda is not None:
+                    exclude_mask |= (x_fit >= min_lambda) & (x_fit <= max_lambda)
+        
+        # Use median filter to estimate the smooth continuum (removes line profiles)
+        # Window size should be large enough to span a line profile but small enough to preserve continuum shape
+        window_size = max(5, int(len(y_fit) * 0.08))  # ~8% of spectrum width for better continuum
+        # Make window size odd (required for median_filter)
+        if window_size % 2 == 0:
+            window_size += 1
+        
+        median_filtered = median_filter(y_fit, size=window_size)
+        
+        # Combine continuum mask and user-defined exclusion mask
+        combined_mask = continuum_mask & ~exclude_mask
+        
+        # Use iterative sigma-clipping on the median-filtered data to reject outliers
+        # This helps identify the true continuum level more robustly
+        continuum_estimate = self._robust_continuum_estimate(x_fit, median_filtered, order, combined_mask)
+        if continuum_estimate is not None:
+            return continuum_estimate
+        
+        # Fallback 1: Try fitting to combined mask regions on median-filtered data
+        if combined_mask.sum() > order + 1:
+            x_masked = x_fit[combined_mask]
+            y_masked = median_filtered[combined_mask]
+            try:
+                poly_coeffs = np.polyfit(x_masked, y_masked, order)
+                return poly_coeffs
+            except:
+                pass
+        
+        # Fallback 2: Fit to the full median-filtered data (exclude user-masked regions)
+        if (~exclude_mask).sum() > order + 1:
+            x_unmasked = x_fit[~exclude_mask]
+            y_unmasked = median_filtered[~exclude_mask]
+            try:
+                poly_coeffs = np.polyfit(x_unmasked, y_unmasked, order)
+                return poly_coeffs
+            except:
+                pass
+        
+        # Fallback 3: Fit lower order polynomial if current order fails
+        for reduced_order in range(order - 1, -1, -1):
+            try:
+                if (~exclude_mask).sum() > reduced_order + 1:
+                    x_unmasked = x_fit[~exclude_mask]
+                    y_unmasked = median_filtered[~exclude_mask]
+                    poly_coeffs = np.polyfit(x_unmasked, y_unmasked, reduced_order)
+                else:
+                    poly_coeffs = np.polyfit(x_fit, median_filtered, reduced_order)
+                # Pad with zeros to match the requested order
+                padding = np.zeros(order - reduced_order)
+                poly_coeffs = np.concatenate([padding, poly_coeffs])
+                return poly_coeffs
+            except:
+                continue
+        
+        # Last resort fallback: constant estimate (median of unmasked data)
+        if (~exclude_mask).sum() > 0:
+            constant_value = np.median(median_filtered[~exclude_mask])
+        else:
+            constant_value = np.median(median_filtered)
+        poly_coeffs = np.zeros(order + 1)
+        poly_coeffs[-1] = constant_value  # Set constant term
+        return poly_coeffs
+
+    def _robust_continuum_estimate(self, x_fit, y_filtered, order, combined_mask, n_iterations=3, sigma_clip=2.0):
+        """Use iterative sigma-clipping to robustly estimate the continuum and fit polynomial"""
+        try:
+            # Start with the combined mask (continuum regions + user-specified safe regions)
+            mask = combined_mask.copy()
+            
+            for iteration in range(n_iterations):
+                if mask.sum() <= order + 1:
+                    # Not enough points left, abort
+                    return None
+                
+                # Fit polynomial to current set of points
+                try:
+                    poly_coeffs = np.polyfit(x_fit[mask], y_filtered[mask], order)
+                    poly_fit = np.polyval(poly_coeffs, x_fit)
+                except:
+                    return None
+                
+                # Calculate residuals
+                residuals = y_filtered - poly_fit
+                std_residuals = np.std(residuals[mask])
+                
+                if std_residuals == 0:
+                    # No variation, use this fit
+                    return poly_coeffs
+                
+                # Sigma-clip: reject points that deviate too much from the fit
+                # (These are likely line profiles, not continuum)
+                new_mask = np.abs(residuals) < sigma_clip * std_residuals
+                
+                # If mask didn't change much, we've converged
+                if np.sum(new_mask == mask) > len(mask) * 0.95:
+                    return poly_coeffs
+                
+                mask = new_mask
+            
+            # Return the final fit
+            if mask.sum() > order + 1:
+                poly_coeffs = np.polyfit(x_fit[mask], y_filtered[mask], order)
+                return poly_coeffs
+            
+            return None
+        except:
+            return None
+
+    def _check_listfit_quality(self, result, y_fit):
+        """Check the quality of the Listfit and warn user if fit is poor"""
+        warnings = []
+        
+        # Criterion 1: Reduced chi-square
+        # For a good fit, reduced chi-square should be close to 1
+        # Much > 1 indicates poor fit (underfitting or bad initial guesses)
+        rchi = result.redchi
+        if rchi is not None and rchi > 5.0:
+            warnings.append(f"High reduced chi-square ({rchi:.2f} >> 1): Fit may be underfitting data. Consider adding more components or higher-order polynomial.")
+        elif rchi is not None and rchi > 2.0:
+            warnings.append(f"Moderate reduced chi-square ({rchi:.2f} > 1): Fit quality could be improved.")
+        
+        # Criterion 2: R-squared value
+        # R-squared should be close to 1 for a good fit
+        # Can extract from fit_report string or calculate from residuals
+        try:
+            # Calculate R-squared from best_fit and data
+            ss_res = np.sum((y_fit - result.best_fit) ** 2)
+            ss_tot = np.sum((y_fit - np.mean(y_fit)) ** 2)
+            r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
+            
+            if r_squared < 0.80:
+                warnings.append(f"Low R-squared ({r_squared:.3f} < 0.80): Poor goodness-of-fit. Consider adjusting components.")
+            elif r_squared < 0.90:
+                warnings.append(f"Moderate R-squared ({r_squared:.3f} < 0.90): Consider refitting with better initial guesses.")
+        except:
+            pass
+        
+        # Criterion 3: Check for suspicious parameter values (very large or very small)
+        # These might indicate the optimizer went to extreme values
+        extreme_value = False
+        for param_name, param in result.params.items():
+            if param.value is not None:
+                # Check if parameter value is extremely large or small
+                if abs(param.value) > 1e6 or (abs(param.value) < 1e-6 and abs(param.value) > 0):
+                    extreme_value = True
+                    break
+        
+        if extreme_value:
+            warnings.append("Some parameters have extreme values: Fit may be unstable. Try refitting with adjusted component bounds.")
+        
+        # Print warnings
+        if warnings:
+            print("\n" + "="*70)
+            print("⚠️  FIT QUALITY WARNINGS - CONSIDER RE-FITTING ⚠️")
+            print("="*70)
+            for warning in warnings:
+                print(f"  • {warning}")
+            print("="*70)
+            print("Tip: Try adjusting initial parameter guesses or component configuration.")
+            print("="*70 + "\n")
+
+    def _identify_continuum_regions(self, x_fit, y_fit):
+        """Identify regions likely to be continuum (not dominated by line profiles)"""
+        from scipy.signal import find_peaks
+        
+        # Use peak detection to identify line profile regions
+        median_y = np.median(y_fit)
+        deviation = np.abs(y_fit - median_y)
+        
+        # Find peaks in deviation from median
+        peaks, _ = find_peaks(deviation, height=np.std(y_fit)*0.5)
+        
+        # Mark regions around peaks as NOT continuum
+        continuum_mask = np.ones(len(x_fit), dtype=bool)
+        peak_width = max(2, int(len(x_fit) * 0.05))  # ~5% of range around each peak
+        
+        for peak_idx in peaks:
+            start = max(0, peak_idx - peak_width)
+            end = min(len(x_fit), peak_idx + peak_width)
+            continuum_mask[start:end] = False
+        
+        # Ensure edges are marked as continuum (usually safe regions)
+        edge_width = max(2, int(len(x_fit) * 0.1))
+        continuum_mask[:edge_width] = True
+        continuum_mask[-edge_width:] = True
+        
+        # Need at least some continuum points
+        if continuum_mask.sum() < 3:
+            # Fallback: mark everything as continuum
+            continuum_mask[:] = True
+        
+        return continuum_mask
+
+    def _estimate_gaussian_params(self, x_fit, y_fit, peak_idx=None):
+        """Estimate Gaussian parameters using peak detection with FWHM (same as single Gaussian mode)
+        
+        Args:
+            x_fit: x data
+            y_fit: y data
+            peak_idx: Optional specific peak index to use. If None, uses the global maximum.
+        """
+        # Find the peak to use
+        if peak_idx is not None:
+            peak_index = peak_idx
+        else:
+            peak_index = np.argmax(np.abs(y_fit))
+        
+        peak_x = x_fit[peak_index]
+        peak_y = y_fit[peak_index]
+        
+        # Amplitude is the peak value
+        amp_guess = peak_y
+        
+        # Estimate sigma from FWHM (Full Width at Half Maximum) around this peak
+        half_max = amp_guess / 2.0
+        try:
+            # Find indices where signal is above half maximum, but limit search to region around peak
+            search_width = len(x_fit) // 3  # Search within 1/3 of spectrum on each side
+            search_start = max(0, peak_index - search_width)
+            search_end = min(len(x_fit), peak_index + search_width)
+            
+            # Find indices in the search region where signal is above half maximum
+            if amp_guess > 0:
+                indices_above_half = np.where(y_fit[search_start:search_end] > half_max)[0] + search_start
+            else:
+                indices_above_half = np.where(y_fit[search_start:search_end] < half_max)[0] + search_start
+            
+            if len(indices_above_half) >= 2:
+                fwhm_estimate = x_fit[indices_above_half[-1]] - x_fit[indices_above_half[0]]
+                # Convert FWHM to sigma: FWHM = 2.355 * sigma for Gaussian
+                sigma_guess = fwhm_estimate / (2.0 * np.sqrt(2.0 * np.log(2.0)))
+                # Ensure sigma is positive and not too small
+                sigma_guess = max(sigma_guess, (x_fit[-1] - x_fit[0]) / 100.0)
+            else:
+                # Fallback to a reasonable default
+                sigma_guess = (x_fit[-1] - x_fit[0]) / 10.0
+        except:
+            # Fallback to a reasonable default
+            sigma_guess = (x_fit[-1] - x_fit[0]) / 10.0
+        
+        # Center is at the peak location
+        center_guess = peak_x
+        
+        return amp_guess, center_guess, sigma_guess
+
     def plot_listfit_components(self, result, components, x_fit, y_fit, err_fit, left_bound, right_bound):
         """Plot the fitted components with different colors"""
-        x_smooth = np.linspace(x_fit.min(), x_fit.max(), len(x_fit) * 10)
+        x_smooth = np.linspace(x_fit.min(), x_fit.max(), len(x_fit) * 50)
         
         # Color mapping for components
         colors = {'gaussian': 'red', 'voigt': 'orange', 'polynomial': 'magenta'}
@@ -5089,9 +5400,9 @@ class SpectrumPlotter(QtWidgets.QWidget):
                                            position=position_str, color=color)
                 poly_count += 1
         
-        # Plot total fit
-        y_total = result.best_fit
-        total_line, = self.ax.plot(x_fit, y_total, color='darkblue', linestyle='-', linewidth=1.5, label='Total Fit', zorder=10)
+        # Plot total fit on the fine grid
+        y_total_smooth = result.eval(params=result.params, x=x_smooth)
+        total_line, = self.ax.plot(x_smooth, y_total_smooth, color='darkblue', linestyle='-', linewidth=1.5, label='Total Fit', zorder=10)
         
         # Register total fit with ItemTracker
         position_str = f"λ: {left_bound:.2f}-{right_bound:.2f} Å"

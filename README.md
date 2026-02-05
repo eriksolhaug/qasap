@@ -146,6 +146,129 @@ This method uses the entry point defined in `setup.py` to create a proper comman
    sudo ln -s $QASAP_PATH /usr/local/bin/qasap
    ```
 
+## Upgrading Versions
+
+If you already have QASAP installed (e.g., v0.9) and want to upgrade to a newer version (e.g., v0.10), follow these steps:
+
+### Method 1: Clean Installation (Recommended)
+
+This is the safest approach if you installed with `pip install -e .`:
+
+```bash
+# 1. Deactivate your conda environment (if using conda)
+conda deactivate
+
+# 2. Remove the old installation
+pip uninstall qasap
+
+# 3. Remove the old local directory (optional but recommended)
+rm -rf /path/to/old/qasap
+
+# 4. Clone the new version
+git clone https://github.com/eriksolhaug/qasap.git
+# OR clone a specific version tag
+git clone --depth 1 --branch v0.10 https://github.com/eriksolhaug/qasap.git
+
+# 5. Navigate to the new qasap directory
+cd qasap
+
+# 6. Reactivate your conda environment
+conda activate qasap
+
+# 7. Install the new version
+pip install -e .
+
+# 8. Verify installation
+qasap --help
+```
+
+### Method 2: Update Existing Repository
+
+If you cloned from git and want to update to a newer version:
+
+**Option A: Update to a Specific Version Tag (e.g., v0.10)**
+
+```bash
+# 1. Navigate to your qasap directory
+cd </path/to/qasap>
+
+# 2. Fetch all available versions/tags from remote
+git fetch origin
+
+# 3. Checkout the specific version you want
+git checkout v0.10
+
+# 4. Reinstall (if dependencies changed)
+pip install -e .
+
+# 5. Verify
+qasap --help
+```
+
+**Option B: Update to the Latest Development Version**
+
+```bash
+# 1. Navigate to your qasap directory
+cd /path/to/qasap
+
+# 2. Pull the latest changes
+git pull origin main
+
+# 3. Reinstall (if dependencies changed)
+pip install -e .
+
+# 4. Verify
+qasap --help
+```
+
+# 4. Reinstall the package (if dependencies changed)
+pip install -e .
+
+# 5. Verify the update
+qasap --help
+```
+
+### Method 3: Manual Update (Without Git)
+
+If you don't have git or prefer not to use it:
+
+```bash
+# 1. Download the new version from GitHub (as a zip file)
+# Visit: https://github.com/eriksolhaug/qasap/releases
+# Or use curl to download a specific tag:
+curl -L -o qasap-v0.10.zip https://github.com/eriksolhaug/qasap/archive/refs/tags/v0.10.zip
+
+# 2. Unzip the downloaded file
+unzip qasap-v0.10.zip
+
+# 3. Remove the old qasap directory
+rm -rf /path/to/old/qasap
+
+# 4. Navigate to the new directory
+cd qasap-v0.10
+
+# 5. Reinstall
+pip install -e .
+
+# 6. Verify
+qasap --help
+```
+
+### Troubleshooting Version Updates
+
+**"command not found: qasap"** after updating:
+- Make sure your conda environment is activated: `conda activate qasap`
+- Try reinstalling: `pip install -e .`
+
+**Import errors or missing modules**:
+- Update dependencies: `pip install -r requirements.txt`
+- Or reinstall all requirements: `pip install --upgrade -r requirements.txt`
+
+**Old version still running**:
+- Check which qasap is being used: `which qasap`
+- Verify it points to your new installation
+- If it's a symlink (Method 2 of initial install), update it to point to the new location
+
 ## Quick Start
 
 ### Running QASAP
@@ -413,7 +536,8 @@ Centralized feature management panel accessed with `*` key:
 
 ## Versions
 
-- **v0.9** (current): Fixed Listfit parameter error extraction, PolynomialModel integration for proper coefficient variation, Item Tracker synchronization with internal storage removal
+- **v0.10** (current): Added robust Listfit capabilities. Listfit now works for higher-order Polynomials (>2) and with multiple line profiles fitted simultaneously.
+- **v0.9** (stable): Fixed Listfit parameter error extraction, PolynomialModel integration for proper coefficient variation, Item Tracker synchronization with internal storage removal
 - **v0.8**: Listfit mode for simultaneous multi-component fitting, ItemTracker for centralized feature management with multi-select and deletion, auto-fit registration, redshift mode improvements
 - **v0.7** (stable): Available as tagged release on GitHub. Refactored with intelligent format auto-detection, modular architecture, and comprehensive UI
 - **v0.5** (legacy): Available in `qasap_v0.5/` directory with full Voigt/Gaussian fitting, MCMC, velocity mode
