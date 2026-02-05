@@ -4707,8 +4707,11 @@ class SpectrumPlotter(QtWidgets.QWidget):
             else:
                 print("No Voigt fits to save.")
 
-        # Save Continuum fits
+        # Save Continuum fits or Listfit polynomials
         elif event.key == 'S':
+            saved_something = False
+            
+            # Save Continuum fits (if in continuum mode)
             if self.continuum_fits:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 filename = f"continuum_fits_{timestamp}.csv"
@@ -4716,8 +4719,44 @@ class SpectrumPlotter(QtWidgets.QWidget):
                 df.drop(columns=['line', 'patches'], inplace=True, errors='ignore')  # Exclude non-serializable fields
                 df.to_csv(filename, index=False)
                 print(f"Saved Continuum fits to {filename}")
-            else:
-                print("No Continuum fits to save.")
+                saved_something = True
+            
+            # Save Listfit polynomial coefficients (if there are listfit fits)
+            if self.listfit_fits:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                listfit_polys = []
+                for listfit in self.listfit_fits:
+                    bounds = listfit.get('bounds')
+                    components = listfit.get('components', [])
+                    # Extract polynomial components
+                    for comp in components:
+                        if comp['type'] == 'polynomial':
+                            order = comp.get('order', 1)
+                            result = listfit.get('result')
+                            if result:
+                                # Collect polynomial coefficients
+                                prefix = f"p{len([c for c in components[:components.index(comp)] if c['type'] == 'polynomial'])}_"
+                                poly_entry = {
+                                    'bounds_min': bounds[0],
+                                    'bounds_max': bounds[1],
+                                    'polynomial_order': order,
+                                }
+                                # Add coefficients
+                                for i in range(order + 1):
+                                    param_name = f'{prefix}c{i}'
+                                    if param_name in result.params:
+                                        poly_entry[f'c{i}'] = result.params[param_name].value
+                                listfit_polys.append(poly_entry)
+                
+                if listfit_polys:
+                    filename = f"listfit_polynomials_{timestamp}.csv"
+                    df = pd.DataFrame(listfit_polys)
+                    df.to_csv(filename, index=False)
+                    print(f"Saved Listfit polynomial coefficients to {filename}")
+                    saved_something = True
+            
+            if not saved_something:
+                print("No Continuum fits or Listfit polynomials to save.")
 
         elif event.key == 'K':
             file_path, _ = QFileDialog.getOpenFileName(
