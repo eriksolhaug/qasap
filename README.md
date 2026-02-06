@@ -6,6 +6,7 @@
 
 ![Python](https://img.shields.io/badge/Python-3.7%2B-blue)
 ![PyQt5](https://img.shields.io/badge/PyQt5-5.15%2B-blue?logo=pyqt&logoColor=white)
+![numpy](https://img.shields.io/badge/numpy-1.17%2B-yellow)
 ![scipy](https://img.shields.io/badge/scipy-1.5%2B-brightgreen?logo=python&logoColor=white)
 ![matplotlib](https://img.shields.io/badge/matplotlib-3.1%2B-orange?logo=python&logoColor=white)
 ![astropy](https://img.shields.io/badge/astropy-4.0%2B-red?logo=python&logoColor=white)
