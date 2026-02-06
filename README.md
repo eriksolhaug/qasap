@@ -1,4 +1,7 @@
-# <img src="logo/qasap_logo.png" alt="QASAP Logo" width="80">&nbsp;&nbsp;QASAP — Quick Analysis of Spectra and Profiles
+# <img src="logo/qasap_logo.png" alt="QASAP Logo" width="80">&nbsp;&nbsp;QASAP
+
+*An Analysis Tool for Astronomical Spectra*
+
 ## Version 0.10
 
 ![PyQt5](https://img.shields.io/badge/PyQt5-5.15%2B-blue?logo=pyqt&logoColor=white)
