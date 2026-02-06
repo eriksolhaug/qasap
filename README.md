@@ -1,4 +1,4 @@
-# <img src="logo/qasap_logo.png" alt="QASAP Logo" width="80">&nbsp;&nbsp;QASAP
+# <img src="logo/qasap_logo.png" alt="QASAP Logo" width="80">&nbsp;&nbsp;QASAP: Quick Analysis of Spectra and Profiles
 
 *An Analysis Tool for Astronomical Spectra*
 
